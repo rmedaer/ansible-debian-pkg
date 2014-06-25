@@ -2,6 +2,7 @@ Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: ansible
 Upstream-Contact: Michael DeHaan <michael.dehaan@gmail.com>
 Source: https://github.com/ansible/ansible/
+Files-Excluded: docsite/_static/jquery.js docsite/_static/underscore.js
 
 Files: *
 Copyright: 2012, Michael DeHaan <michael.dehaan@gmail.com>
