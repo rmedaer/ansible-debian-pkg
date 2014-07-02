@@ -45,7 +45,6 @@ import getpass
 import sys
 import json
 
-#import vault
 from vault import VaultLib
 
 VERBOSITY=0
@@ -68,6 +67,11 @@ try:
     PASSLIB_AVAILABLE = True
 except:
     pass
+
+try:
+    import builtin
+except ImportError:
+    import __builtin__ as builtin
 
 KEYCZAR_AVAILABLE=False
 try:
@@ -309,7 +313,38 @@ def json_loads(data):
 
     return json.loads(data)
 
-def parse_json(raw_data):
+def _clean_data(orig_data):
+    ''' remove template tags from a string '''
+    data = orig_data
+    if isinstance(orig_data, basestring):
+        for pattern,replacement in (('{{','{#'), ('}}','#}'), ('{%','{#'), ('%}','#}')):
+            data = data.replace(pattern, replacement)
+    return data
+
+def _clean_data_struct(orig_data):
+    '''
+    walk a complex data structure, and use _clean_data() to
+    remove any template tags that may exist
+    '''
+    if isinstance(orig_data, dict):
+        data = orig_data.copy()
+        for key in data:
+            new_key = _clean_data_struct(key)
+            new_val = _clean_data_struct(data[key])
+            if key != new_key:
+                del data[key]
+            data[new_key] = new_val
+    elif isinstance(orig_data, list):
+        data = orig_data[:]
+        for i in range(0, len(data)):
+            data[i] = _clean_data_struct(data[i])
+    elif isinstance(orig_data, basestring):
+        data = _clean_data(orig_data)
+    else:
+        data = orig_data
+    return data
+
+def parse_json(raw_data, from_remote=False):
     ''' this version for module return data only '''
 
     orig_data = raw_data
@@ -318,7 +353,7 @@ def parse_json(raw_data):
     data = filter_leading_non_json_lines(raw_data)
 
     try:
-        return json.loads(data)
+        results = json.loads(data)
     except:
         # not JSON, but try "Baby JSON" which allows many of our modules to not
         # require JSON and makes writing modules in bash much simpler
@@ -328,7 +363,6 @@ def parse_json(raw_data):
         except:
             print "failed to parse json: "+ data
             raise
-
         for t in tokens:
             if "=" not in t:
                 raise errors.AnsibleError("failed to parse: %s" % orig_data)
@@ -343,7 +377,11 @@ def parse_json(raw_data):
             results[key] = value
         if len(results.keys()) == 0:
             return { "failed" : True, "parsed" : False, "msg" : orig_data }
-        return results
+
+    if from_remote:
+        results = _clean_data_struct(results)
+
+    return results
 
 def smush_braces(data):
     ''' smush Jinaj2 braces so unresolved templates like {{ foo }} don't get parsed weird by key=value code '''
@@ -1041,7 +1079,6 @@ def safe_eval(expr, locals={}, include_exceptions=False):
     SAFE_NODES = set(
         (
             ast.Add,
-            ast.Attribute,
             ast.BinOp,
             ast.Call,
             ast.Compare,
@@ -1068,34 +1105,24 @@ def safe_eval(expr, locals={}, include_exceptions=False):
             )
         )
 
-    # builtin functions that are safe to call
-    BUILTIN_WHITELIST = [
-        'abs', 'all', 'any', 'basestring', 'bin', 'bool', 'buffer', 'bytearray',
-        'bytes', 'callable', 'chr', 'cmp', 'coerce', 'complex', 'copyright', 'credits',
-        'dict', 'dir', 'divmod', 'enumerate', 'exit', 'float', 'format', 'frozenset',
-        'getattr', 'globals', 'hasattr', 'hash', 'hex', 'id', 'int', 'intern',
-        'isinstance', 'issubclass', 'iter', 'len', 'license', 'list', 'locals', 'long',
-        'map', 'max', 'memoryview', 'min', 'next', 'oct', 'ord', 'pow', 'print',
-        'property', 'quit', 'range', 'reversed', 'round', 'set', 'slice', 'sorted',
-        'str', 'sum', 'tuple', 'unichr', 'unicode', 'vars', 'xrange', 'zip',
-    ]
-
     filter_list = []
     for filter in filter_loader.all():
         filter_list.extend(filter.filters().keys())
 
-    CALL_WHITELIST = BUILTIN_WHITELIST + filter_list + C.DEFAULT_CALLABLE_WHITELIST
+    CALL_WHITELIST = C.DEFAULT_CALLABLE_WHITELIST + filter_list
 
     class CleansingNodeVisitor(ast.NodeVisitor):
-        def generic_visit(self, node):
+        def generic_visit(self, node, inside_call=False):
             if type(node) not in SAFE_NODES:
                 raise Exception("invalid expression (%s)" % expr)
             elif isinstance(node, ast.Call):
-                if not isinstance(node.func, ast.Attribute) and node.func.id not in CALL_WHITELIST:
-                    raise Exception("invalid function: %s" % node.func.id)
+                inside_call = True
+            elif isinstance(node, ast.Name) and inside_call:
+                if hasattr(builtin, node.id) and node.id not in CALL_WHITELIST:
+                    raise Exception("invalid function: %s" % node.id)
             # iterate over all child nodes
             for child_node in ast.iter_child_nodes(node):
-                super(CleansingNodeVisitor, self).visit(child_node)
+                self.generic_visit(child_node, inside_call)
 
     if not isinstance(expr, basestring):
         # already templated to a datastructure, perhaps?
@@ -1103,9 +1130,9 @@ def safe_eval(expr, locals={}, include_exceptions=False):
             return (expr, None)
         return expr
 
+    cnv = CleansingNodeVisitor()
     try:
         parsed_tree = ast.parse(expr, mode='eval')
-        cnv = CleansingNodeVisitor()
         cnv.visit(parsed_tree)
         compiled = compile(parsed_tree, expr, 'eval')
         result = eval(compiled, {}, locals)
