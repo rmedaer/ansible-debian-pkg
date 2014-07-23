@@ -1,0 +1,4 @@
+# Because of the new functionality in uscan, the upstream version that
+# uscan fetches will actually be DFSG-free.  As a result, until bug
+# #748465 is resolved, I am overriding this warning.
+source: debian-watch-file-should-dversionmangle-not-uversionmangle
