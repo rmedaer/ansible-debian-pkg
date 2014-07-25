@@ -70,8 +70,12 @@ def split_args(args):
 
     # here we encode the args, so we have a uniform charset to
     # work with, and split on white space
-    args = args.encode('utf-8')
-    tokens = args.split()
+    try:
+        args = args.encode('utf-8')
+        do_decode = True
+    except UnicodeDecodeError:
+        do_decode = False
+    tokens = args.split(' ')
 
     # iterate over the tokens, and reassemble any that may have been
     # split on a space inside a jinja2 block.
@@ -90,8 +94,6 @@ def split_args(args):
     # now we loop over each split token, coalescing tokens if the white space
     # split occurred within quotes or a jinja2 block of some kind
     for token in tokens:
-
-        token = token.strip()
 
         # store the previous quoting state for checking later
         was_inside_quotes = inside_quotes
@@ -137,7 +139,7 @@ def split_args(args):
 
         # finally, if we're at zero depth for all blocks and not inside quotes, and have not
         # yet appended anything to the list of params, we do so now
-        if not (print_depth or block_depth or comment_depth) and not inside_quotes and not appended:
+        if not (print_depth or block_depth or comment_depth) and not inside_quotes and not appended and token != '':
             params.append(token)
 
     # If we're done and things are not at zero depth or we're still inside quotes,
@@ -146,7 +148,8 @@ def split_args(args):
         raise Exception("error while splitting arguments, either an unbalanced jinja2 block or quotes")
 
     # finally, we decode each param back to the unicode it was in the arg string
-    params = [x.decode('utf-8') for x in params]
+    if do_decode:
+        params = [x.decode('utf-8') for x in params]
     return params
 
 def unquote(data):
