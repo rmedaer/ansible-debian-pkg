@@ -80,6 +80,8 @@ class Flags:
 
 FILTER_PLUGINS = None
 _LISTRE = re.compile(r"(\w+)\[(\d+)\]")
+JINJA2_OVERRIDE = '#jinja2:'
+JINJA2_ALLOWED_OVERRIDES = ['trim_blocks', 'lstrip_blocks', 'newline_sequence', 'keep_trailing_newline']
 
 def lookup(name, *args, **kwargs):
     from ansible import utils
@@ -227,6 +229,18 @@ def template_from_file(basedir, path, vars, vault_password=None):
     except:
         raise errors.AnsibleError("unable to read %s" % realpath)
 
+    # Get jinja env overrides from template
+    if data.startswith(JINJA2_OVERRIDE):
+        eol = data.find('\n')
+        line = data[len(JINJA2_OVERRIDE):eol]
+        data = data[eol+1:]
+        for pair in line.split(','):
+            (key,val) = pair.split(':')
+            key = key.strip()
+            if key in JINJA2_ALLOWED_OVERRIDES:
+                setattr(environment, key, ast.literal_eval(val.strip()))
+
+
     environment.template_class = J2Template
     try:
         t = environment.from_string(data)
@@ -267,6 +281,16 @@ def template_from_file(basedir, path, vars, vault_password=None):
         res = jinja2.utils.concat(t.root_render_func(t.new_context(_jinja2_vars(basedir, vars, t.globals, fail_on_undefined), shared=True)))
     except jinja2.exceptions.UndefinedError, e:
         raise errors.AnsibleUndefinedVariable("One or more undefined variables: %s" % str(e))
+    except jinja2.exceptions.TemplateNotFound, e:
+        # Throw an exception which includes a more user friendly error message
+        # This likely will happen for included sub-template. Not that besides
+        # pure "file not found" it may happen due to Jinja2's "security"
+        # checks on path.
+        values = {'name': realpath, 'subname': str(e)}
+        msg = 'file: %(name)s, error: Cannot find/not allowed to load (include) template %(subname)s' % \
+               values
+        error = errors.AnsibleError(msg)
+        raise error
 
     # The low level calls above do not preserve the newline
     # characters at the end of the input data, so we use the

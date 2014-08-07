@@ -110,6 +110,8 @@ def main():
                     current_path = value
                 elif key == 'Alternative':
                     all_alternatives.append(value)
+                elif key == 'Link' and not link:
+                    link = value
 
     if current_path != path:
         try:
@@ -127,7 +129,7 @@ def main():
             )
 
             module.exit_json(changed=True)
-        except subprocess.CalledProcessError as cpe:
+        except subprocess.CalledProcessError, cpe:
             module.fail_json(msg=str(dir(cpe)))
     else:
         module.exit_json(changed=False)

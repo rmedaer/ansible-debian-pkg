@@ -53,6 +53,7 @@ import sys
 import syslog
 import types
 import time
+import select
 import shutil
 import stat
 import tempfile
@@ -101,6 +102,44 @@ except ImportError:
     import syslog
     has_journal = False
 
+try:
+    from ast import literal_eval as _literal_eval
+except ImportError:
+    # a replacement for literal_eval that works with python 2.4. from: 
+    # https://mail.python.org/pipermail/python-list/2009-September/551880.html
+    # which is essentially a cut/past from an earlier (2.6) version of python's
+    # ast.py
+    from compiler import parse
+    from compiler.ast import *
+    def _literal_eval(node_or_string):
+        """
+        Safely evaluate an expression node or a string containing a Python
+        expression.  The string or node provided may only consist of the  following
+        Python literal structures: strings, numbers, tuples, lists, dicts,  booleans,
+        and None.
+        """
+        _safe_names = {'None': None, 'True': True, 'False': False}
+        if isinstance(node_or_string, basestring):
+            node_or_string = parse(node_or_string, mode='eval')
+        if isinstance(node_or_string, Expression):
+            node_or_string = node_or_string.node
+        def _convert(node):
+            if isinstance(node, Const) and isinstance(node.value, (basestring, int, float, long, complex)):
+                 return node.value
+            elif isinstance(node, Tuple):
+                return tuple(map(_convert, node.nodes))
+            elif isinstance(node, List):
+                return list(map(_convert, node.nodes))
+            elif isinstance(node, Dict):
+                return dict((_convert(k), _convert(v)) for k, v in node.items)
+            elif isinstance(node, Name):
+                if node.name in _safe_names:
+                    return _safe_names[node.name]
+            elif isinstance(node, UnarySub):
+                return -_convert(node.expr)
+            raise ValueError('malformed string')
+        return _convert(node_or_string)
+
 FILE_COMMON_ARGUMENTS=dict(
     src = dict(),
     mode = dict(),
@@ -115,6 +154,7 @@ FILE_COMMON_ARGUMENTS=dict(
     backup = dict(),
     force = dict(),
     remote_src = dict(), # used by assemble
+    regexp = dict(), # used by assemble
     delimiter = dict(), # used by assemble
     directory_mode = dict(), # used by copy
 )
@@ -141,6 +181,20 @@ def get_distribution():
     else:
         distribution = None
     return distribution
+
+def get_distribution_version():
+    ''' return the distribution version '''
+    if platform.system() == 'Linux':
+        try:
+            distribution_version = platform.linux_distribution()[1]
+            if not distribution_version and os.path.isfile('/etc/system-release'):
+                distribution_version = platform.linux_distribution(supported_dists=['system'])[1]
+        except:
+            # FIXME: MethodMissing, I assume?
+            distribution_version = platform.dist()[1]
+    else:
+        distribution_version = None
+    return distribution_version
 
 def load_platform_subclass(cls, *args, **kwargs):
     '''
@@ -685,6 +739,38 @@ class AnsibleModule(object):
             else:
                 self.fail_json(msg="internal error: do not know how to interpret argument_spec")
 
+    def safe_eval(self, str, locals=None, include_exceptions=False):
+
+        # do not allow method calls to modules
+        if not isinstance(str, basestring):
+            # already templated to a datastructure, perhaps?
+            if include_exceptions:
+                return (str, None)
+            return str
+        if re.search(r'\w\.\w+\(', str):
+            if include_exceptions:
+                return (str, None)
+            return str
+        # do not allow imports
+        if re.search(r'import \w+', str):
+            if include_exceptions:
+                return (str, None)
+            return str
+        try:
+            result = None
+            if not locals:
+                result = _literal_eval(str)
+            else:
+                result = _literal_eval(str, None, locals)
+            if include_exceptions:
+                return (result, None)
+            else:
+                return result
+        except Exception, e:
+            if include_exceptions:
+                return (str, e)
+            return str
+
     def _check_argument_types(self):
         ''' ensure all arguments have the requested type '''
         for (k, v) in self.argument_spec.iteritems():
@@ -1078,7 +1164,7 @@ class AnsibleModule(object):
             # rename might not preserve context
             self.set_context_if_different(dest, context, False)
 
-    def run_command(self, args, check_rc=False, close_fds=False, executable=None, data=None, binary_data=False, path_prefix=None, cwd=None, use_unsafe_shell=False):
+    def run_command(self, args, check_rc=False, close_fds=True, executable=None, data=None, binary_data=False, path_prefix=None, cwd=None, use_unsafe_shell=False):
         '''
         Execute a command, returns rc, stdout, and stderr.
         args is the command to run
@@ -1138,6 +1224,7 @@ class AnsibleModule(object):
             # that are not balanced
             # source: http://blog.stevenlevithan.com/archives/match-quoted-string
             r'([-]{0,2}pass[-]?(?:word|wd)?[=\s]?)((?:["\'])?(?:[^\s])*(?:\1)?)',
+            r'^(?P<before>.*:)(?P<password>.*)(?P<after>\@.*)$', 
             # TODO: add more regex checks here
         ]
         for re_str in clean_re_strings:
@@ -1151,7 +1238,7 @@ class AnsibleModule(object):
             executable=executable,
             shell=shell,
             close_fds=close_fds,
-            stdin= st_in,
+            stdin=st_in,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE 
         )
@@ -1174,10 +1261,48 @@ class AnsibleModule(object):
         try:
             cmd = subprocess.Popen(args, **kwargs)
 
+            # the communication logic here is essentially taken from that
+            # of the _communicate() function in ssh.py
+
+            stdout = ''
+            stderr = ''
+            rpipes = [cmd.stdout, cmd.stderr]
+
             if data:
                 if not binary_data:
                     data += '\n'
-            out, err = cmd.communicate(input=data)
+                cmd.stdin.write(data)
+                cmd.stdin.close()
+
+            while True:
+                rfd, wfd, efd = select.select(rpipes, [], rpipes, 1)
+                if cmd.stdout in rfd:
+                    dat = os.read(cmd.stdout.fileno(), 9000)
+                    stdout += dat
+                    if dat == '':
+                        rpipes.remove(cmd.stdout)
+                if cmd.stderr in rfd:
+                    dat = os.read(cmd.stderr.fileno(), 9000)
+                    stderr += dat
+                    if dat == '':
+                        rpipes.remove(cmd.stderr)
+                # only break out if no pipes are left to read or
+                # the pipes are completely read and
+                # the process is terminated
+                if (not rpipes or not rfd) and cmd.poll() is not None:
+                    break
+                # No pipes are left to read but process is not yet terminated
+                # Only then it is safe to wait for the process to be finished
+                # NOTE: Actually cmd.poll() is always None here if rpipes is empty
+                elif not rpipes and cmd.poll() == None:
+                    cmd.wait()
+                    # The process is terminated. Since no pipes to read from are
+                    # left, there is no need to call select() again.
+                    break
+
+            cmd.stdout.close()
+            cmd.stderr.close()
+
             rc = cmd.returncode
         except (OSError, IOError), e:
             self.fail_json(rc=e.errno, msg=str(e), cmd=clean_args)
@@ -1185,13 +1310,13 @@ class AnsibleModule(object):
             self.fail_json(rc=257, msg=traceback.format_exc(), cmd=clean_args)
 
         if rc != 0 and check_rc:
-            msg = err.rstrip()
-            self.fail_json(cmd=clean_args, rc=rc, stdout=out, stderr=err, msg=msg)
+            msg = stderr.rstrip()
+            self.fail_json(cmd=clean_args, rc=rc, stdout=stdout, stderr=stderr, msg=msg)
 
         # reset the pwd
         os.chdir(prev_dir)
 
-        return (rc, out, err)
+        return (rc, stdout, stderr)
 
     def append_to_file(self, filename, str):
         filename = os.path.expandvars(os.path.expanduser(filename))
