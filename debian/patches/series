@@ -1,4 +1,3 @@
 stock-doctheme
 disable-google-analytics.patch
 
-fix-ansible-pull-manpage.patch
