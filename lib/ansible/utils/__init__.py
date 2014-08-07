@@ -1,4 +1,4 @@
-# (c) 2012, Michael DeHaan <michael.dehaan@gmail.com>
+# (c) 2012-2014, Michael DeHaan <michael.dehaan@gmail.com>
 #
 # This file is part of Ansible
 #
@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
+import errno
 import sys
 import re
 import os
@@ -28,7 +29,7 @@ from ansible import __version__
 from ansible.utils.display_functions import *
 from ansible.utils.plugins import *
 from ansible.callbacks import display
-from ansible.utils.splitter import split_args, unquote
+from ansible.module_utils.splitter import split_args, unquote
 import ansible.constants as C
 import ast
 import time
@@ -44,6 +45,7 @@ import traceback
 import getpass
 import sys
 import json
+import subprocess
 
 from vault import VaultLib
 
@@ -155,6 +157,32 @@ def decrypt(key, msg):
 ###############################################################
 # UTILITY FUNCTIONS FOR COMMAND LINE TOOLS
 ###############################################################
+
+def read_vault_file(vault_password_file):
+    """Read a vault password from a file or if executable, execute the script and
+    retrieve password from STDOUT
+    """
+    if vault_password_file:
+        this_path = os.path.realpath(os.path.expanduser(vault_password_file))
+        if is_executable(this_path):
+            try:
+                # STDERR not captured to make it easier for users to prompt for input in their scripts
+                p = subprocess.Popen(this_path, stdout=subprocess.PIPE)
+            except OSError, e:
+                raise errors.AnsibleError("problem running %s (%s)" % (' '.join(this_path), e))
+            stdout, stderr = p.communicate()
+            vault_pass = stdout.strip('\r\n')
+        else:
+            try:
+                f = open(this_path, "rb")
+                vault_pass=f.read().strip()
+                f.close()
+            except (OSError, IOError), e:
+                raise errors.AnsibleError("Could not read %s: %s" % (this_path, e))
+
+        return vault_pass
+    else:
+        return None
 
 def err(msg):
     ''' print an error message to stderr '''
@@ -322,16 +350,69 @@ def json_loads(data):
     return json.loads(data)
 
 def _clean_data(orig_data, from_remote=False, from_inventory=False):
-    ''' remove template tags from a string '''
-    data = orig_data
-    if isinstance(orig_data, basestring):
-        sub_list = [('{%','{#'), ('%}','#}')]
-        if from_remote or (from_inventory and '{{' in data and LOOKUP_REGEX.search(data)):
-            # if from a remote, we completely disable any jinja2 blocks
-            sub_list.extend([('{{','{#'), ('}}','#}')])
-        for pattern,replacement in sub_list:
-            data = data.replace(pattern, replacement)
-    return data
+    ''' remove jinja2 template tags from a string '''
+
+    if not isinstance(orig_data, basestring):
+        return orig_data
+
+    data = StringIO.StringIO("")
+
+    # when the data is marked as having come from a remote, we always
+    # replace any print blocks (ie. {{var}}), however when marked as coming
+    # from inventory we only replace print blocks that contain a call to
+    # a lookup plugin (ie. {{lookup('foo','bar'))}})
+    replace_prints = from_remote or (from_inventory and '{{' in orig_data and LOOKUP_REGEX.search(orig_data) is not None)
+
+    # these variables keep track of opening block locations, as we only
+    # want to replace matched pairs of print/block tags
+    print_openings = []
+    block_openings = []
+
+    for idx,c in enumerate(orig_data):
+        # if the current character is an opening brace, check to
+        # see if this is a jinja2 token. Otherwise, if the current
+        # character is a closing brace, we backup one character to
+        # see if we have a closing.
+        if c == '{' and idx < len(orig_data) - 1:
+            token = orig_data[idx:idx+2]
+            # if so, and we want to replace this block, push
+            # this token's location onto the appropriate array
+            if token == '{{' and replace_prints:
+                print_openings.append(idx)
+            elif token == '{%':
+                block_openings.append(idx)
+            # finally we write the data to the buffer and write
+            data.seek(0, os.SEEK_END)
+            data.write(c)
+        elif c == '}' and idx > 0:
+            token = orig_data[idx-1:idx+1]
+            prev_idx = -1
+            if token == '%}' and len(block_openings) > 0:
+                prev_idx = block_openings.pop()
+            elif token == '}}' and len(print_openings) > 0:
+                prev_idx = print_openings.pop()
+            # if we have a closing token, and we have previously found
+            # the opening to the same kind of block represented by this
+            # token, replace both occurrences, otherwise we just write
+            # the current character to the buffer
+            if prev_idx != -1:
+                # replace the opening
+                data.seek(prev_idx, os.SEEK_SET)
+                data.write('{#')
+                # replace the closing
+                data.seek(-1, os.SEEK_END)
+                data.write('#}')
+            else:
+                data.seek(0, os.SEEK_END)
+                data.write(c)
+        else:
+            # not a jinja2 token, so we just write the current char
+            # to the output buffer
+            data.seek(0, os.SEEK_END)
+            data.write(c)
+    return_data = data.getvalue()
+    data.close()
+    return return_data
 
 def _clean_data_struct(orig_data, from_remote=False, from_inventory=False):
     '''
@@ -552,7 +633,6 @@ Note: The error may actually appear before this position: line %s, column %s
                 if '"{{' not in probline or "'{{" not in probline:
                     unquoted_var = True
 
-            msg = process_common_errors(msg, probline, mark.column)
             if not unquoted_var:
                 msg = process_common_errors(msg, probline, mark.column)
             else:
@@ -570,7 +650,6 @@ Should be written as:
       - "{{ foo }}"      
 
 """
-                msg = process_common_errors(msg, probline, mark.column)
         else:
             # most likely displaying a file with sensitive content,
             # so don't show any of the actual lines of yaml just the
@@ -615,8 +694,6 @@ def parse_kv(args):
     ''' convert a string of key/value items to a dict '''
     options = {}
     if args is not None:
-        # attempting to split a unicode here does bad things
-        args = args.encode('utf-8')
         try:
             vargs = split_args(args)
         except ValueError, ve:
@@ -624,29 +701,29 @@ def parse_kv(args):
                 raise errors.AnsibleError("error parsing argument string, try quoting the entire line.")
             else:
                 raise
-        vargs = [x.decode('utf-8') for x in vargs]
         for x in vargs:
             if "=" in x:
                 k, v = x.split("=",1)
-                options[k] = unquote(v)
+                options[k] = unquote(v.strip())
     return options
 
 def merge_hash(a, b):
     ''' recursively merges hash b into a
     keys from b take precedence over keys from a '''
 
-    result = copy.deepcopy(a)
+    result = {}
 
-    # next, iterate over b keys and values
-    for k, v in b.iteritems():
-        # if there's already such key in a
-        # and that key contains dict
-        if k in result and isinstance(result[k], dict):
-            # merge those dicts recursively
-            result[k] = merge_hash(a[k], v)
-        else:
-            # otherwise, just copy a value from b to a
-            result[k] = v
+    for dicts in a, b:
+        # next, iterate over b keys and values
+        for k, v in dicts.iteritems():
+            # if there's already such key in a
+            # and that key contains dict
+            if k in result and isinstance(result[k], dict):
+                # merge those dicts recursively
+                result[k] = merge_hash(a[k], v)
+            else:
+                # otherwise, just copy a value from b to a
+                result[k] = v
 
     return result
 
@@ -661,9 +738,9 @@ def md5s(data):
     return digest.hexdigest()
 
 def md5(filename):
-    ''' Return MD5 hex digest of local file, or None if file is not present. '''
+    ''' Return MD5 hex digest of local file, None if file is not present or a directory. '''
 
-    if not os.path.exists(filename):
+    if not os.path.exists(filename) or os.path.isdir(filename):
         return None
     digest = _md5()
     blocksize = 64 * 1024
@@ -810,8 +887,8 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
         help='ask for su password')
     parser.add_option('--ask-vault-pass', default=False, dest='ask_vault_pass', action='store_true', 
         help='ask for vault password')
-    parser.add_option('--vault-password-file', default=None, dest='vault_password_file',
-        help="vault password file")
+    parser.add_option('--vault-password-file', default=constants.DEFAULT_VAULT_PASSWORD_FILE,
+        dest='vault_password_file', help="vault password file")
     parser.add_option('--list-hosts', dest='listhosts', action='store_true',
         help='outputs a list of matching hosts; does not execute anything else')
     parser.add_option('-M', '--module-path', dest='module_path',
@@ -961,11 +1038,11 @@ def filter_leading_non_json_lines(buf):
     filter only leading lines since multiline JSON is valid.
     '''
 
-    kv_regex = re.compile(r'.*\w+=\w+.*')
+    kv_regex = re.compile(r'\w=\w')
     filtered_lines = StringIO.StringIO()
     stop_filtering = False
     for line in buf.splitlines():
-        if stop_filtering or kv_regex.match(line) or line.startswith('{') or line.startswith('['):
+        if stop_filtering or line.startswith('{') or line.startswith('[') or kv_regex.search(line):
             stop_filtering = True
             filtered_lines.write(line + '\n')
     return filtered_lines.getvalue()
@@ -1003,9 +1080,9 @@ def make_su_cmd(su_user, executable, cmd):
     """
     # TODO: work on this function
     randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
-    prompt = 'assword: '
+    prompt = '[Pp]assword: ?$'
     success_key = 'SUDO-SUCCESS-%s' % randbits
-    sudocmd = '%s %s %s %s -c %s' % (
+    sudocmd = '%s %s %s -c "%s -c %s"' % (
         C.DEFAULT_SU_EXE, C.DEFAULT_SU_FLAGS, su_user, executable or '$SHELL',
         pipes.quote('echo %s; %s' % (success_key, cmd))
     )
@@ -1180,7 +1257,10 @@ def listify_lookup_plugin_terms(terms, basedir, inject):
         #    with_items: {{ alist }}
 
         stripped = terms.strip()
-        if not (stripped.startswith('{') or stripped.startswith('[')) and not stripped.startswith("/") and not stripped.startswith('set(['):
+        if not (stripped.startswith('{') or stripped.startswith('[')) and \
+           not stripped.startswith("/") and \
+           not stripped.startswith('set([') and \
+           not LOOKUP_REGEX.search(terms):
             # if not already a list, get ready to evaluate with Jinja2
             # not sure why the "/" is in above code :)
             try:
@@ -1228,5 +1308,114 @@ def before_comment(msg):
     msg = msg.replace("**NOT_A_COMMENT**","#")
     return msg
 
+def load_vars(basepath, results, vault_password=None):
+    """
+    Load variables from any potential yaml filename combinations of basepath,
+    returning result.
+    """
 
+    paths_to_check = [ "".join([basepath, ext])
+                       for ext in C.YAML_FILENAME_EXTENSIONS ]
+
+    found_paths = []
+
+    for path in paths_to_check:
+        found, results = _load_vars_from_path(path, results, vault_password=vault_password)
+        if found:
+            found_paths.append(path)
+
+
+    # disallow the potentially confusing situation that there are multiple
+    # variable files for the same name. For example if both group_vars/all.yml
+    # and group_vars/all.yaml
+    if len(found_paths) > 1:
+        raise errors.AnsibleError("Multiple variable files found. "
+            "There should only be one. %s" % ( found_paths, ))
+
+    return results
+
+## load variables from yaml files/dirs
+#  e.g. host/group_vars
+#
+def _load_vars_from_path(path, results, vault_password=None):
+    """
+    Robustly access the file at path and load variables, carefully reporting
+    errors in a friendly/informative way.
+
+    Return the tuple (found, new_results, )
+    """
+
+    try:
+        # in the case of a symbolic link, we want the stat of the link itself,
+        # not its target
+        pathstat = os.lstat(path)
+    except os.error, err:
+        # most common case is that nothing exists at that path.
+        if err.errno == errno.ENOENT:
+            return False, results
+        # otherwise this is a condition we should report to the user
+        raise errors.AnsibleError(
+            "%s is not accessible: %s."
+            " Please check its permissions." % ( path, err.strerror))
+
+    # symbolic link
+    if stat.S_ISLNK(pathstat.st_mode):
+        try:
+            target = os.path.realpath(path)
+        except os.error, err2:
+            raise errors.AnsibleError("The symbolic link at %s "
+                "is not readable: %s.  Please check its permissions."
+                % (path, err2.strerror, ))
+        # follow symbolic link chains by recursing, so we repeat the same
+        # permissions checks above and provide useful errors.
+        return _load_vars_from_path(target, results)
+
+    # directory
+    if stat.S_ISDIR(pathstat.st_mode):
+
+        # support organizing variables across multiple files in a directory
+        return True, _load_vars_from_folder(path, results, vault_password=vault_password)
+
+    # regular file
+    elif stat.S_ISREG(pathstat.st_mode):
+        data = parse_yaml_from_file(path, vault_password=vault_password)
+        if data and type(data) != dict:
+            raise errors.AnsibleError(
+                "%s must be stored as a dictionary/hash" % path)
+        elif data is None:
+            data = {}
+
+        # combine vars overrides by default but can be configured to do a
+        # hash merge in settings
+        results = combine_vars(results, data)
+        return True, results
+
+    # something else? could be a fifo, socket, device, etc.
+    else:
+        raise errors.AnsibleError("Expected a variable file or directory "
+            "but found a non-file object at path %s" % (path, ))
+
+def _load_vars_from_folder(folder_path, results, vault_password=None):
+    """
+    Load all variables within a folder recursively.
+    """
+
+    # this function and _load_vars_from_path are mutually recursive
+
+    try:
+        names = os.listdir(folder_path)
+    except os.error, err:
+        raise errors.AnsibleError(
+            "This folder cannot be listed: %s: %s."
+             % ( folder_path, err.strerror))
+
+    # evaluate files in a stable order rather than whatever order the
+    # filesystem lists them.
+    names.sort()
+
+    # do not parse hidden files or dirs, e.g. .svn/
+    paths = [os.path.join(folder_path, name) for name in names if not name.startswith('.')]
+    for path in paths:
+        _found, results = _load_vars_from_path(path, results, vault_password=vault_password)
+    return results
 

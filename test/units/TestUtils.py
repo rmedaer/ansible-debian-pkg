@@ -3,6 +3,7 @@
 import unittest
 import os
 import os.path
+import re
 import tempfile
 import yaml
 import passlib.hash
@@ -16,7 +17,7 @@ import ansible.utils
 import ansible.errors
 import ansible.constants as C
 import ansible.utils.template as template2
-from ansible.utils.splitter import split_args
+from ansible.module_utils.splitter import split_args
 
 from ansible import __version__
 
@@ -164,6 +165,8 @@ class TestUtils(unittest.TestCase):
     def test_parse_kv_basic(self):
         self.assertEqual(ansible.utils.parse_kv('a=simple b="with space" c="this=that"'),
                 {'a': 'simple', 'b': 'with space', 'c': 'this=that'})
+        self.assertEqual(ansible.utils.parse_kv('msg=АБВГД'),
+                {'msg': 'АБВГД'})
 
 
     def test_jsonify(self):
@@ -494,8 +497,8 @@ class TestUtils(unittest.TestCase):
         cmd = ansible.utils.make_su_cmd('root', '/bin/sh', '/bin/ls')
         self.assertTrue(isinstance(cmd, tuple))
         self.assertEqual(len(cmd), 3)
-        self.assertTrue(' root /bin/sh' in cmd[0])
-        self.assertTrue(cmd[1] == 'assword: ')
+        self.assertTrue('root -c "/bin/sh' in cmd[0] or ' root -c /bin/sh' in cmd[0])
+        self.assertTrue(re.compile(cmd[1]))
         self.assertTrue('echo SUDO-SUCCESS-' in cmd[0] and cmd[2].startswith('SUDO-SUCCESS-'))
 
     def test_to_unicode(self):
@@ -702,8 +705,9 @@ class TestUtils(unittest.TestCase):
         # jinja2 loop blocks with lots of complexity
         _test_combo(
             # in memory of neighbors cat
-            'a {% if x %} y {%else %} {{meow}} {% endif %} cookiechip\ndone',
-            ['a', '{% if x %}', 'y', '{%else %}', '{{meow}}', '{% endif %}', 'cookiechip\ndone']
+            # we only preserve newlines inside of quotes
+            'a {% if x %} y {%else %} {{meow}} {% endif %} "cookie\nchip"\ndone',
+            ['a', '{% if x %}', 'y', '{%else %}', '{{meow}}', '{% endif %}', '"cookie\nchip"', 'done']
         )
 
         # test space preservation within quotes
@@ -715,4 +719,35 @@ class TestUtils(unittest.TestCase):
         # invalid jinja2 nesting detection
         # invalid quote nesting detection
     
+    def test_clean_data(self):
+        # clean data removes jinja2 tags from data
+        self.assertEqual(
+            ansible.utils._clean_data('this is a normal string', from_remote=True),
+            'this is a normal string'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string has a {{variable}}', from_remote=True),
+            'this string has a {#variable#}'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string has a {{variable with a\nnewline}}', from_remote=True),
+            'this string has a {#variable with a\nnewline#}'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string is from inventory {{variable}}', from_inventory=True),
+            'this string is from inventory {{variable}}'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string is from inventory too but uses lookup {{lookup("foo","bar")}}', from_inventory=True),
+            'this string is from inventory too but uses lookup {#lookup("foo","bar")#}'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string has JSON in it: {"foo":{"bar":{"baz":"oops"}}}', from_remote=True),
+            'this string has JSON in it: {"foo":{"bar":{"baz":"oops"}}}'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string contains unicode: ¢ £ ¤ ¥', from_remote=True),
+            'this string contains unicode: ¢ £ ¤ ¥'
+        )
+
 

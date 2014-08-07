@@ -93,7 +93,7 @@ And that will provide the most basic form of variable substitution.
 
 This is also valid directly in playbooks, and you'll occasionally want to do things like::
 
-    template: src=foo.cfg.j2 dest={{ remote_install_path}}/foo.cfg
+    template: src=foo.cfg.j2 dest={{ remote_install_path }}/foo.cfg
 
 In the above example, we used a variable to help decide where to place a file.
 
@@ -173,7 +173,7 @@ The variable value will be used as is, but the template evaluation will raise an
 Defaulting Undefined Variables
 ------------------------------
 
-Jinja2 provides a useful 'default' filter, that is often a better approach to failing if a variable is not defined.
+Jinja2 provides a useful 'default' filter, that is often a better approach to failing if a variable is not defined::
 
     {{ some_variable | default(5) }}
 
@@ -216,14 +216,13 @@ Version Comparison Filters
 .. versionadded:: 1.6
 
 To compare a version number, such as checking if the ``ansible_distribution_version``
-version is greater than or equal to '12.04', you can use the ``version_compare`` filter::
+version is greater than or equal to '12.04', you can use the ``version_compare`` filter.
 
 The ``version_compare`` filter can also be used to evaluate the ``ansible_distribution_version``::
 
     {{ ansible_distribution_version | version_compare('12.04', '>=') }}
 
-If ``ansible_distribution_version`` is greater than or equal to 12, this filter will return True, otherwise
-it will return False.
+If ``ansible_distribution_version`` is greater than or equal to 12, this filter will return True, otherwise it will return False.
 
 The ``version_compare`` filter accepts the following operators::
 
@@ -234,10 +233,10 @@ be used.  The default is ``False``, and if set as ``True`` will use more strict 
 
     {{ sample_version_var | version_compare('1.0', operator='lt', strict=True) }}
 
-.. _random_filter
+.. _random_filter:
 
 Random Number Filter
---------------------------
+--------------------
 
 .. versionadded:: 1.6
 
@@ -983,7 +982,7 @@ See :doc:`playbooks_roles` for more info about this::
     http_port: 80
 
 if you are writing a role and want to ensure the value in the role is absolutely used in that role, and is not going to be overridden
-by inventory, you should but it in roles/x/vars/main.yml like so, and inventory values cannot override it.  -e however, still will::
+by inventory, you should put it in roles/x/vars/main.yml like so, and inventory values cannot override it.  -e however, still will::
 
     ---
     # file: roles/x/vars/main.yml
@@ -1030,7 +1029,7 @@ can set variables in there and make use of them in other roles and elsewhere in 
         - { role: something_else }
 
 .. note:: There are some protections in place to avoid the need to namespace variables.  
-          In the above, variables defined in common_settings are most definitely available to 'app_user' and 'something_else' tasks, but if
+          In the above, variables defined in common_settings are most definitely available to 'something' and 'something_else' tasks, but if
           "something's" guaranteed to have foo set at 12, even if somewhere deep in common settings it set foo to 20.
 
 So, that's precedence, explained in a more direct way.  Don't worry about precedence, just think about if your role is defining a

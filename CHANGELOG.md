@@ -1,6 +1,40 @@
 Ansible Changes By Release
 ==========================
 
+## 1.7 "Summer Nights" - Active Development
+
+Major new features:
+
+* Windows support (alpha) using native PowerShell remoting
+* Tasks can now specify `run_once: true`, meaning they will be executed exactly once. This can be combined with delegate_to to trigger actions you want done just the one time versus for every host in inventory.
+
+New inventory scripts:
+
+* SoftLayer
+* Windows Azure
+
+New Modules:
+
+* cloud: azure
+* cloud: rax_meta
+* cloud: rax_scaling_group
+* cloud: rax_scaling_policy
+* windows: version of setup module
+* windows: version of slurp module
+* windows: win_feature
+* windows: win_get_url
+* windows: win_msi
+* windows: win_ping
+* windows: win_user
+* windows: win_service
+* windows: win_group
+
+Other notable changes:
+
+* Inventory speed improvements for very large inventories.
+* Vault password files can now be executable, to support scripts that fetch the vault password.
+
+
 ## 1.6.10 "And the Cradle Will Rock" - Jul 25, 2014
 
 - Fixes an issue with the copy module when copying a directory that fails when changing file attributes and the target file already exists
@@ -26,13 +60,9 @@ Ansible Changes By Release
 
 - Security updates to further protect against the incorrect execution of untrusted data
 
-## 1.6.5 "And the Cradle Will Rock" - Jun 25, 2014
+## 1.6.4, 1.6.5 "And the Cradle Will Rock" - Jun 25, 2014
 
-- Additional tweaks to prevent the incorrect execution of untrusted data
-
-## 1.6.4 "And the Cradle Will Rock" - Jun 25, 2014
-
-- Security update to prevent local operations from executing as the result of specifically crafted untrusted data
+- Security updates related to evaluation of untrusted remote inputs
 
 ## 1.6.3 "And the Cradle Will Rock" - Jun 09, 2014
 
@@ -44,7 +74,7 @@ Ansible Changes By Release
 - Various other minor bug fixes.
 
 ## 1.6.2 "And the Cradle Will Rock" - May 23, 2014
- 
+
 - If an improper locale is specified, core modules will now automatically revert to using the 'C' locale.
 - Modules using the fetch_url utility will now obey proxy environment variables.
 - The SSL validation step in fetch_url will likewise obey proxy settings, however only proxies using the http protocol are supported.
