@@ -16,6 +16,7 @@ Package: ansible
 Architecture: all
 Depends: ${misc:Depends}, ${python:Depends}, python-crypto, python-yaml, 
  openssh-client | python-paramiko, python-jinja2, python-httplib2
+Recommends: python-selinux
 Suggests: ansible-doc, sshpass
 Description: Configuration management, deployment, and task execution system
  Ansible is a radically simple model-driven configuration management,

@@ -2,6 +2,7 @@ ansible (1.7.0+dfsg-1) unstable; urgency=medium
 
   * New upstream release.
   * Refresh and remove outdated patches.
+  * Add python-selinux to Recommends for SELinux support. (Closes: #757358)
 
  -- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>  Wed, 06 Aug 2014 21:15:22 -0400
 
