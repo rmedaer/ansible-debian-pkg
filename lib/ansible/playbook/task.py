@@ -208,11 +208,15 @@ class Task(object):
         self.changed_when = ds.get('changed_when', None)
         self.failed_when = ds.get('failed_when', None)
 
+        # combine the default and module vars here for use in templating
+        all_vars = self.default_vars.copy()
+        all_vars = utils.combine_vars(all_vars, self.module_vars)
+
         self.async_seconds = ds.get('async', 0)  # not async by default
-        self.async_seconds = template.template_from_string(play.basedir, self.async_seconds, self.module_vars)
+        self.async_seconds = template.template_from_string(play.basedir, self.async_seconds, all_vars)
         self.async_seconds = int(self.async_seconds)
         self.async_poll_interval = ds.get('poll', 10)  # default poll = 10 seconds
-        self.async_poll_interval = template.template_from_string(play.basedir, self.async_poll_interval, self.module_vars)
+        self.async_poll_interval = template.template_from_string(play.basedir, self.async_poll_interval, all_vars)
         self.async_poll_interval = int(self.async_poll_interval)
         self.notify = ds.get('notify', [])
         self.first_available_file = ds.get('first_available_file', None)
@@ -235,7 +239,14 @@ class Task(object):
             self.notify = [ self.notify ]
 
         # split the action line into a module name + arguments
-        tokens = split_args(self.action)
+        try:
+            tokens = split_args(self.action)
+        except Exception, e:
+            if "unbalanced" in str(e):
+                raise errors.AnsibleError("There was an error while parsing the task %s.\n" % repr(self.action) + \
+                                          "Make sure quotes are matched or escaped properly")
+            else:
+                raise
         if len(tokens) < 1:
             raise errors.AnsibleError("invalid/missing action in task. name: %s" % self.name)
         self.module_name = tokens[0]
@@ -289,6 +300,7 @@ class Task(object):
         self.tags.extend(import_tags)
 
         if additional_conditions:
-            new_conditions = additional_conditions
-            new_conditions.append(self.when)
+            new_conditions = additional_conditions[:]
+            if self.when:
+                new_conditions.append(self.when)
             self.when = new_conditions

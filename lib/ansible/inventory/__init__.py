@@ -142,27 +142,34 @@ class Inventory(object):
 
         # get group vars from group_vars/ files and vars plugins
         for group in self.groups:
-            group.vars = utils.combine_vars(group.vars, self.get_group_variables(group.name, self._vault_password))
+            group.vars = utils.combine_vars(group.vars, self.get_group_variables(group.name, vault_password=self._vault_password))
 
         # get host vars from host_vars/ files and vars plugins
         for host in self.get_hosts():
-            host.vars = utils.combine_vars(host.vars, self.get_variables(host.name, self._vault_password))
+            host.vars = utils.combine_vars(host.vars, self.get_variables(host.name, vault_password=self._vault_password))
 
 
     def _match(self, str, pattern_str):
-        if pattern_str.startswith('~'):
-            return re.search(pattern_str[1:], str)
-        else:
-            return fnmatch.fnmatch(str, pattern_str)
+        try:
+            if pattern_str.startswith('~'):
+                return re.search(pattern_str[1:], str)
+            else:
+                return fnmatch.fnmatch(str, pattern_str)
+        except Exception, e:
+            raise errors.AnsibleError('invalid host pattern: %s' % pattern_str)
 
     def _match_list(self, items, item_attr, pattern_str):
         results = []
-        if not pattern_str.startswith('~'):
-            pattern = re.compile(fnmatch.translate(pattern_str))
-        else:
-            pattern = re.compile(pattern_str[1:])
+        try:
+            if not pattern_str.startswith('~'):
+                pattern = re.compile(fnmatch.translate(pattern_str))
+            else:
+                pattern = re.compile(pattern_str[1:])
+        except Exception, e:
+            raise errors.AnsibleError('invalid host pattern: %s' % pattern_str)
+
         for item in items:
-            if pattern.search(getattr(item, item_attr)):
+            if pattern.match(getattr(item, item_attr)):
                 results.append(item)
         return results
 
