@@ -705,9 +705,9 @@ class TestUtils(unittest.TestCase):
         # jinja2 loop blocks with lots of complexity
         _test_combo(
             # in memory of neighbors cat
-            # we only preserve newlines inside of quotes
-            'a {% if x %} y {%else %} {{meow}} {% endif %} "cookie\nchip"\ndone',
-            ['a', '{% if x %}', 'y', '{%else %}', '{{meow}}', '{% endif %}', '"cookie\nchip"', 'done']
+            # we preserve line breaks unless a line continuation character preceeds them
+            'a {% if x %} y {%else %} {{meow}} {% endif %} "cookie\nchip" \\\ndone\nand done',
+            ['a', '{% if x %}', 'y', '{%else %}', '{{meow}}', '{% endif %}', '"cookie\nchip"', 'done', '\nand', 'done']
         )
 
         # test space preservation within quotes
@@ -728,6 +728,10 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(
             ansible.utils._clean_data('this string has a {{variable}}', from_remote=True),
             'this string has a {#variable#}'
+        )
+        self.assertEqual(
+            ansible.utils._clean_data('this string {{has}} two {{variables}} in it', from_remote=True),
+            'this string {#has#} two {#variables#} in it'
         )
         self.assertEqual(
             ansible.utils._clean_data('this string has a {{variable with a\nnewline}}', from_remote=True),
