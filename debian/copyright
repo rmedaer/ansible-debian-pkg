@@ -30,7 +30,7 @@ Files: docsite/_static/sidebar.js
  docsite/_static/doctools.js
  docsite/_static/basic.css
 Copyright: 2007-2011 by the Sphinx team
-License: BSD
+License: BSD-2-Clause
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions are
  met:
@@ -64,15 +64,14 @@ License: GPL-3+
 
 Files: lib/ansible/runner/action_plugins/fail.py
  lib/ansible/runner/action_plugins/debug.py
- library/debug
- library/mail
- library/fail
+ library/utilities/debug
+ library/notification/mail
+ library/utilities/fail
  plugins/callbacks/mail.py
 Copyright: 2012, Dag Wieers <dag@wieers.com>
 License: GPL-3+
 
 Files: lib/ansible/runner/action_plugins/group_by.py
- plugins/inventory/yaml.py
 Copyright: 2012, Jeroen Hoekx <jeroen@hoekx.be>
 License: GPL-3+
 
@@ -80,13 +79,13 @@ Files: lib/ansible/runner/action_plugins/pause.py
 Copyright: 2012, Tim Bielawa <tbielawa@redhat.com>
 License: GPL-3+
 
-Files: library/virt
+Files: library/cloud/virt
 Copyright: 2007, 2012 Red Hat, Inc
  Michael DeHaan <michael.dehaan@gmail.com>
  Seth Vidal <skvidal@fedoraproject.org>
 License: GPL-3+
 
-Files: library/nagios
+Files: library/monitoring/nagios
 Copyright: 2011, Red Hat, Inc.
  Tim Bielawa <tbielawa@redhat.com>
 License: GPL-2
@@ -98,10 +97,6 @@ License: GPL-2
 Files: debian/*
 Copyright: 2013 Janos Guljas <janos@debian.org>,
  2014, Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>
-License: GPL-3+
-
-Files: debian/patches/*manpage.patch
-Copyright: 2014, James Cammarata <jimi@sngx.net>
 License: GPL-3+
 
 License: GPL-3+
