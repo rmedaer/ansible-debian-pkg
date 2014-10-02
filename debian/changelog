@@ -1,3 +1,15 @@
+ansible (1.7.2+dfsg-2) unstable; urgency=low
+
+  * Add updated paths to d/copyright.
+
+ -- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>  Thu, 02 Oct 2014 17:31:12 -0400
+
+ansible (1.7.2+dfsg-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>  Wed, 24 Sep 2014 16:55:14 -0400
+
 ansible (1.7.1+dfsg-1) unstable; urgency=medium
 
   * New upstream release.
