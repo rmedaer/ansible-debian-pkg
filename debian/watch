@@ -1,3 +1,2 @@
 version=3
-opts=uversionmangle=s/$/\+dfsg/ \
-    https://github.com/ansible/ansible/tags .*/v(.*).tar.gz
+https://releases.ansible.com/ansible/ ansible-([0-9\.]+).tar.gz
