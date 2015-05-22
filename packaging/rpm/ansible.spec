@@ -1,5 +1,6 @@
 %define name ansible
 %define ansible_version $VERSION
+%define ansible_release $RELEASE
 
 %if 0%{?rhel} == 5
 %define __python /usr/bin/python26
@@ -7,7 +8,7 @@
 
 Name:      %{name}
 Version:   %{ansible_version}
-Release:   1%{?dist}
+Release:   %{ansible_release}%{?dist}
 Url:       http://www.ansible.com
 Summary:   SSH-based application deployment, configuration management, and IT orchestration platform
 License:   GPLv3
@@ -95,7 +96,6 @@ cp examples/ansible.cfg %{buildroot}/etc/ansible/
 mkdir -p %{buildroot}/%{_mandir}/man1/
 cp -v docs/man/man1/*.1 %{buildroot}/%{_mandir}/man1/
 mkdir -p %{buildroot}/%{_datadir}/ansible
-cp -rv library/* %{buildroot}/%{_datadir}/ansible/
 
 %clean
 rm -rf %{buildroot}
@@ -105,15 +105,32 @@ rm -rf %{buildroot}
 %{python_sitelib}/ansible*
 %{_bindir}/ansible*
 %dir %{_datadir}/ansible
-%dir %{_datadir}/ansible/*
-%{_datadir}/ansible/*/*
 %config(noreplace) %{_sysconfdir}/ansible
 %doc README.md PKG-INFO COPYING
 %doc %{_mandir}/man1/ansible*
-%doc examples/playbooks
-
 
 %changelog
+
+* Mon Apr 27 2015 Ansible, Inc. <support@ansible.com> - 1.9.1
+- Release 1.9.1
+
+* Wed Mar 25 2015 Ansible, Inc. <support@ansible.com> - 1.9.0
+- Release 1.9.0
+
+* Thu Feb 19 2015 Ansible, Inc. <support@ansible.com> - 1.8.4
+- Release 1.8.4
+
+* Tue Feb 17 2015 Ansible, Inc. <support@ansible.com> - 1.8.3
+- Release 1.8.3
+
+* Thu Dec 04 2014 Michael DeHaan <michael@ansible.com> - 1.8.2
+- Release 1.8.2
+
+* Wed Nov 26 2014 Michael DeHaan <michael@ansible.com> - 1.8.1
+- Release 1.8.1
+
+* Tue Nov 25 2014 Michael DeHaan <michael@ansible.com> - 1.8.0
+- Release 1.8.0
 
 * Wed Sep 24 2014 Michael DeHaan <michael@ansible.com> - 1.7.2
 - Release 1.7.2

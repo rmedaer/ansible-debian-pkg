@@ -50,6 +50,7 @@ try:
 except:
     HAS_SSL=False
 
+import httplib
 import os
 import re
 import socket
@@ -78,6 +79,26 @@ qFy+aenWXsC0ZvrikFxbQnX8GVtDADtVznxOi7XzFw7JOxdsVrpXgSN0eh0aMzvV
 zKPZsZ2miVGclicJHzm5q080b1p/sZtuKIEZk6vZqEg=
 -----END CERTIFICATE-----
 """
+
+class CustomHTTPSConnection(httplib.HTTPSConnection):
+    def connect(self):
+        "Connect to a host on a given (SSL) port."
+
+        if hasattr(self, 'source_address'):
+            sock = socket.create_connection((self.host, self.port), self.timeout, self.source_address)
+        else:
+            sock = socket.create_connection((self.host, self.port), self.timeout)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        self.sock = ssl.wrap_socket(sock, keyfile=self.key_file, certfile=self.cert_file, ssl_version=ssl.PROTOCOL_TLSv1)
+
+class CustomHTTPSHandler(urllib2.HTTPSHandler):
+
+    def https_open(self, req):
+        return self.do_open(CustomHTTPSConnection, req)
+
+    https_request = urllib2.AbstractHTTPHandler.do_request_
 
 def generic_urlparse(parts):
     '''
@@ -186,6 +207,8 @@ class SSLValidationHandler(urllib2.BaseHandler):
             paths_checked.append('/etc/ssl')
         elif platform == 'NetBSD':
             ca_certs.append('/etc/openssl/certs')
+        elif platform == 'SunOS':
+            paths_checked.append('/opt/local/etc/openssl/certs')
 
         # fall back to a user-deployed cert in a standard
         # location if the OS platform one is not available
@@ -196,6 +219,8 @@ class SSLValidationHandler(urllib2.BaseHandler):
         # Write the dummy ca cert if we are running on Mac OS X
         if platform == 'Darwin':
             os.write(tmp_fd, DUMMY_CA_CERT)
+            # Default Homebrew path for OpenSSL certs 
+            paths_checked.append('/usr/local/etc/openssl')
 
         # for all of the paths, find any  .crt or .pem files
         # and compile them into single temp file for use
@@ -227,9 +252,33 @@ class SSLValidationHandler(urllib2.BaseHandler):
         except:
             self.module.fail_json(msg='Connection to proxy failed')
 
+    def detect_no_proxy(self, url):
+        '''
+        Detect if the 'no_proxy' environment variable is set and honor those locations.
+        '''
+        env_no_proxy = os.environ.get('no_proxy')
+        if env_no_proxy:
+            env_no_proxy = env_no_proxy.split(',')
+            netloc = urlparse.urlparse(url).netloc
+
+            for host in env_no_proxy:
+                if netloc.endswith(host) or netloc.split(':')[0].endswith(host):
+                    # Our requested URL matches something in no_proxy, so don't
+                    # use the proxy for this
+                    return False
+        return True
+
     def http_request(self, req):
         tmp_ca_cert_path, paths_checked = self.get_ca_certs()
         https_proxy = os.environ.get('https_proxy')
+
+        # Detect if 'no_proxy' environment variable is set and if our URL is included
+        use_proxy = self.detect_no_proxy(req.get_full_url())
+
+        if not use_proxy:
+            # ignore proxy settings for this host request
+            return req
+
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             if https_proxy:
@@ -373,6 +422,11 @@ def fetch_url(module, url, data=None, headers=None, method=None,
         proxyhandler = urllib2.ProxyHandler({})
         handlers.append(proxyhandler)
 
+    # pre-2.6 versions of python cannot use the custom https
+    # handler, since the socket class is lacking this method
+    if hasattr(socket, 'create_connection'):
+        handlers.append(CustomHTTPSHandler)
+
     opener = urllib2.build_opener(*handlers)
     urllib2.install_opener(opener)
 
@@ -417,6 +471,10 @@ def fetch_url(module, url, data=None, headers=None, method=None,
     except urllib2.URLError, e:
         code = int(getattr(e, 'code', -1))
         info.update(dict(msg="Request failed: %s" % str(e), status=code))
+    except socket.error, e:
+        info.update(dict(msg="Connection failure: %s" % str(e), status=-1))
+    except Exception, e:
+        info.update(dict(msg="An unknown error occurred: %s" % str(e), status=-1))
 
     return r, info
 
