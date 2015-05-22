@@ -616,9 +616,9 @@ License: GPL-3+
 
 Files: lib/ansible/modules/extras/monitoring/nagios.py
 Copyright: 2011, Red Hat, Inc.
-License: GPL-2
+License: GPL-2+
 Comment:
- Filed issue #515 about incompatibility.
+ Licence clarified in upstream ticket
  https://github.com/ansible/ansible-modules-extras/issues/515
 
 Files: lib/ansible/modules/extras/monitoring/airbrake_deployment.py
