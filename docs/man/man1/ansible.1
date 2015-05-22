@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: ansible
 .\"    Author: :doctype:manpage
-.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
-.\"      Date: 05/26/2014
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 03/10/2015
 .\"    Manual: System administration commands
-.\"    Source: Ansible 1.7
+.\"    Source: Ansible 1.9.0
 .\"  Language: English
 .\"
-.TH "ANSIBLE" "1" "05/26/2014" "Ansible 1\&.7" "System administration commands"
+.TH "ANSIBLE" "1" "03/10/2015" "Ansible 1\&.9\&.0" "System administration commands"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -169,6 +169,11 @@ Further limits the selected host/group patterns\&.
 \fB\-l\fR \fI~REGEX\fR, \fB\-\-limit=\fR\fI~REGEX\fR
 .RS 4
 Further limits hosts with a regex pattern\&.
+.RE
+.PP
+\fB\-\-list\-hosts\fR
+.RS 4
+Outputs a list of matching hosts; does not execute anything else\&.
 .RE
 .SH "INVENTORY"
 .sp

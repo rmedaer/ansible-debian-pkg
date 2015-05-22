@@ -28,8 +28,12 @@ from ansible import errors
 from ansible import __version__
 from ansible.utils.display_functions import *
 from ansible.utils.plugins import *
+from ansible.utils.su_prompts import *
+from ansible.utils.hashing import secure_hash, secure_hash_s, checksum, checksum_s, md5, md5s
 from ansible.callbacks import display
 from ansible.module_utils.splitter import split_args, unquote
+from ansible.module_utils.basic import heuristic_log_sanitize
+from ansible.utils.unicode import to_bytes, to_unicode
 import ansible.constants as C
 import ast
 import time
@@ -44,7 +48,6 @@ import warnings
 import traceback
 import getpass
 import sys
-import json
 import subprocess
 import contextlib
 
@@ -60,15 +63,17 @@ LOOKUP_REGEX = re.compile(r'lookup\s*\(')
 PRINT_CODE_REGEX = re.compile(r'(?:{[{%]|[%}]})')
 CODE_REGEX = re.compile(r'(?:{%|%})')
 
-try:
-    import json
-except ImportError:
-    import simplejson as json
 
 try:
-    from hashlib import md5 as _md5
+    # simplejson can be much faster if it's available
+    import simplejson as json
 except ImportError:
-    from md5 import md5 as _md5
+    import json
+
+try:
+    from yaml import CSafeLoader as Loader
+except ImportError:
+    from yaml import SafeLoader as Loader
 
 PASSLIB_AVAILABLE = False
 try:
@@ -99,7 +104,7 @@ try:
             system_warning(
                 "The version of gmp you have installed has a known issue regarding " + \
                 "timing vulnerabilities when used with pycrypto. " + \
-                "If possible, you should update it (ie. yum update gmp)."
+                "If possible, you should update it (i.e. yum update gmp)."
             )
             warnings.resetwarnings()
             warnings.simplefilter("ignore")
@@ -108,6 +113,7 @@ try:
         KEYCZAR_AVAILABLE=True
 except ImportError:
     pass
+
 
 ###############################################################
 # Abstractions around keyczar
@@ -207,10 +213,15 @@ def jsonify(result, format=False):
     for key, value in result2.items():
         if type(value) is str:
             result2[key] = value.decode('utf-8', 'ignore')
+
+    indent = None
     if format:
-        return json.dumps(result2, sort_keys=True, indent=4)
-    else:
-        return json.dumps(result2, sort_keys=True)
+        indent = 4
+
+    try:
+        return json.dumps(result2, sort_keys=True, indent=indent, ensure_ascii=False)
+    except UnicodeDecodeError:
+        return json.dumps(result2, sort_keys=True, indent=indent)
 
 def write_tree_file(tree, hostname, buf):
     ''' write something into treedir/hostname '''
@@ -249,17 +260,17 @@ def check_conditional(conditional, basedir, inject, fail_on_undefined=False):
 
     conditional = conditional.replace("jinja2_compare ","")
     # allow variable names
-    if conditional in inject and '-' not in str(inject[conditional]):
-        conditional = inject[conditional]
+    if conditional in inject and '-' not in to_unicode(inject[conditional], nonstring='simplerepr'):
+        conditional = to_unicode(inject[conditional], nonstring='simplerepr')
     conditional = template.template(basedir, conditional, inject, fail_on_undefined=fail_on_undefined)
-    original = str(conditional).replace("jinja2_compare ","")
+    original = to_unicode(conditional, nonstring='simplerepr').replace("jinja2_compare ","")
     # a Jinja2 evaluation that results in something Python can eval!
     presented = "{%% if %s %%} True {%% else %%} False {%% endif %%}" % conditional
     conditional = template.template(basedir, presented, inject)
     val = conditional.strip()
     if val == presented:
-        # the templating failed, meaning most likely a 
-        # variable was undefined. If we happened to be 
+        # the templating failed, meaning most likely a
+        # variable was undefined. If we happened to be
         # looking for an undefined variable, return True,
         # otherwise fail
         if "is undefined" in conditional:
@@ -282,7 +293,7 @@ def is_executable(path):
             or stat.S_IXOTH & os.stat(path)[stat.ST_MODE])
 
 def unfrackpath(path):
-    ''' 
+    '''
     returns a path that is free of symlinks, environment
     variables, relative path traversals and symbols (~)
     example:
@@ -314,6 +325,9 @@ def path_dwim(basedir, given):
     '''
     make relative paths work like folks expect.
     '''
+
+    if given.startswith("'"):
+        given = given[1:-1]
 
     if given.startswith("/"):
         return os.path.abspath(given)
@@ -347,10 +361,104 @@ def path_dwim_relative(original, dirname, source, playbook_base, check=True):
         raise errors.AnsibleError("input file not found at %s or %s" % (source2, obvious_local_path))
     return source2 # which does not exist
 
+def repo_url_to_role_name(repo_url):
+    # gets the role name out of a repo like 
+    # http://git.example.com/repos/repo.git" => "repo"
+
+    if '://' not in repo_url and '@' not in repo_url:
+        return repo_url
+    trailing_path = repo_url.split('/')[-1]
+    if trailing_path.endswith('.git'):
+        trailing_path = trailing_path[:-4]
+    if trailing_path.endswith('.tar.gz'):
+        trailing_path = trailing_path[:-7]
+    if ',' in trailing_path:
+        trailing_path = trailing_path.split(',')[0]
+    return trailing_path
+
+
+def role_spec_parse(role_spec):
+    # takes a repo and a version like 
+    # git+http://git.example.com/repos/repo.git,v1.0 
+    # and returns a list of properties such as:
+    # {
+    #   'scm': 'git', 
+    #   'src': 'http://git.example.com/repos/repo.git', 
+    #   'version': 'v1.0', 
+    #   'name': 'repo'
+    # }
+  
+    role_spec = role_spec.strip()
+    role_version = ''
+    default_role_versions = dict(git='master', hg='tip')
+    if role_spec == "" or role_spec.startswith("#"):
+        return (None, None, None, None)
+
+    tokens = [s.strip() for s in role_spec.split(',')]
+    
+    # assume https://github.com URLs are git+https:// URLs and not
+    # tarballs unless they end in '.zip'
+    if 'github.com/' in tokens[0] and not tokens[0].startswith("git+") and not tokens[0].endswith('.tar.gz'):
+        tokens[0] = 'git+' + tokens[0]
+
+    if '+' in tokens[0]:
+        (scm, role_url) = tokens[0].split('+')
+    else:
+        scm = None
+        role_url = tokens[0]
+    if len(tokens) >= 2:
+        role_version = tokens[1]
+    if len(tokens) == 3:
+        role_name = tokens[2]
+    else:
+        role_name = repo_url_to_role_name(tokens[0])
+    if scm and not role_version:
+        role_version = default_role_versions.get(scm, '')
+    return dict(scm=scm, src=role_url, version=role_version, name=role_name)
+
+
+def role_yaml_parse(role):
+    if 'role' in role:
+        # Old style: {role: "galaxy.role,version,name", other_vars: "here" }
+        role_info = role_spec_parse(role['role'])
+        if isinstance(role_info, dict):
+            # Warning: Slight change in behaviour here.  name may be being
+            # overloaded.  Previously, name was only a parameter to the role.
+            # Now it is both a parameter to the role and the name that
+            # ansible-galaxy will install under on the local system.
+            if 'name' in role and 'name' in role_info:
+                del role_info['name']
+            role.update(role_info)
+    else:
+        # New style: { src: 'galaxy.role,version,name', other_vars: "here" }
+        if 'github.com' in role["src"] and 'http' in role["src"] and '+' not in role["src"] and not role["src"].endswith('.tar.gz'):
+            role["src"] = "git+" + role["src"]
+
+        if '+' in role["src"]:
+            (scm, src) = role["src"].split('+')
+            role["scm"] = scm
+            role["src"] = src
+
+        if 'name' not in role:
+            role["name"] = repo_url_to_role_name(role["src"])
+
+        if 'version' not in role:
+            role['version'] = ''
+
+        if 'scm' not in role:
+            role['scm'] = None
+
+    return role
+
+
 def json_loads(data):
     ''' parse a JSON string and return a data structure '''
+    try:
+        loaded = json.loads(data)
+    except ValueError,e:
+        raise errors.AnsibleError("Unable to read provided data as JSON: %s" % str(e))
 
-    return json.loads(data)
+    return loaded
 
 def _clean_data(orig_data, from_remote=False, from_inventory=False):
     ''' remove jinja2 template tags from a string '''
@@ -426,7 +534,7 @@ def _clean_data_struct(orig_data, from_remote=False, from_inventory=False):
         data = orig_data
     return data
 
-def parse_json(raw_data, from_remote=False, from_inventory=False):
+def parse_json(raw_data, from_remote=False, from_inventory=False, no_exceptions=False):
     ''' this version for module return data only '''
 
     orig_data = raw_data
@@ -437,33 +545,27 @@ def parse_json(raw_data, from_remote=False, from_inventory=False):
     try:
         results = json.loads(data)
     except:
-        # not JSON, but try "Baby JSON" which allows many of our modules to not
-        # require JSON and makes writing modules in bash much simpler
-        results = {}
-        try:
-            tokens = shlex.split(data)
-        except:
-            print "failed to parse json: "+ data
+        if no_exceptions:
+            return dict(failed=True, parsed=False, msg=raw_data)
+        else:
             raise
-        for t in tokens:
-            if "=" not in t:
-                raise errors.AnsibleError("failed to parse: %s" % orig_data)
-            (key,value) = t.split("=", 1)
-            if key == 'changed' or 'failed':
-                if value.lower() in [ 'true', '1' ]:
-                    value = True
-                elif value.lower() in [ 'false', '0' ]:
-                    value = False
-            if key == 'rc':
-                value = int(value)
-            results[key] = value
-        if len(results.keys()) == 0:
-            return { "failed" : True, "parsed" : False, "msg" : orig_data }
 
     if from_remote:
         results = _clean_data_struct(results, from_remote, from_inventory)
 
     return results
+
+def serialize_args(args):
+    '''
+    Flattens a dictionary args to a k=v string
+    '''
+    module_args = ""
+    for (k,v) in args.iteritems():
+        if isinstance(v, basestring):
+            module_args = "%s=%s %s" % (k, pipes.quote(v), module_args)
+        elif isinstance(v, bool):
+            module_args = "%s=%s %s" % (k, str(v), module_args)
+    return module_args.strip()
 
 def merge_module_args(current_args, new_args):
     '''
@@ -479,12 +581,7 @@ def merge_module_args(current_args, new_args):
     elif isinstance(new_args, basestring):
         new_args_kv = parse_kv(new_args)
         final_args.update(new_args_kv)
-    # then we re-assemble into a string
-    module_args = ""
-    for (k,v) in final_args.iteritems():
-        if isinstance(v, basestring):
-            module_args = "%s=%s %s" % (k, pipes.quote(v), module_args)
-    return module_args.strip()
+    return serialize_args(final_args)
 
 def parse_yaml(data, path_hint=None):
     ''' convert a yaml string to a data structure.  Also supports JSON, ssssssh!!!'''
@@ -502,7 +599,7 @@ def parse_yaml(data, path_hint=None):
                 raise errors.AnsibleError(str(ve))
     else:
         # else this is pretty sure to be a YAML document
-        loaded = yaml.safe_load(data)
+        loaded = yaml.load(data, Loader=Loader)
 
     return loaded
 
@@ -511,10 +608,10 @@ def process_common_errors(msg, probline, column):
 
     if ":{{" in replaced and "}}" in replaced:
         msg = msg + """
-This one looks easy to fix.  YAML thought it was looking for the start of a 
+This one looks easy to fix.  YAML thought it was looking for the start of a
 hash/dictionary and was confused to see a second "{".  Most likely this was
-meant to be an ansible template evaluation instead, so we have to give the 
-parser a small hint that we wanted a string instead. The solution here is to 
+meant to be an ansible template evaluation instead, so we have to give the
+parser a small hint that we wanted a string instead. The solution here is to
 just quote the entire value.
 
 For instance, if the original line was:
@@ -529,9 +626,9 @@ It should be written as:
 
     elif len(probline) and len(probline) > 1 and len(probline) > column and probline[column] == ":" and probline.count(':') > 1:
         msg = msg + """
-This one looks easy to fix.  There seems to be an extra unquoted colon in the line 
-and this is confusing the parser. It was only expecting to find one free 
-colon. The solution is just add some quotes around the colon, or quote the 
+This one looks easy to fix.  There seems to be an extra unquoted colon in the line
+and this is confusing the parser. It was only expecting to find one free
+colon. The solution is just add some quotes around the colon, or quote the
 entire line after the first colon.
 
 For instance, if the original line was:
@@ -543,7 +640,7 @@ It can be written as:
     copy: src=file.txt dest='/path/filename:with_colon.txt'
 
 Or:
-    
+
     copy: 'src=file.txt dest=/path/filename:with_colon.txt'
 
 
@@ -563,8 +660,8 @@ Or:
                 unbalanced = True
             if match:
                 msg = msg + """
-This one looks easy to fix.  It seems that there is a value started 
-with a quote, and the YAML parser is expecting to see the line ended 
+This one looks easy to fix.  It seems that there is a value started
+with a quote, and the YAML parser is expecting to see the line ended
 with the same kind of quote.  For instance:
 
     when: "ok" in result.stdout
@@ -582,9 +679,9 @@ or equivalently:
 
             if unbalanced:
                 msg = msg + """
-We could be wrong, but this one looks like it might be an issue with 
-unbalanced quotes.  If starting a value with a quote, make sure the 
-line ends with the same set of quotes.  For instance this arbitrary 
+We could be wrong, but this one looks like it might be an issue with
+unbalanced quotes.  If starting a value with a quote, make sure the
+line ends with the same set of quotes.  For instance this arbitrary
 example:
 
     foo: "bad" "wolf"
@@ -625,8 +722,8 @@ Note: The error may actually appear before this position: line %s, column %s
             else:
                 msg = msg + """
 We could be wrong, but this one looks like it might be an issue with
-missing quotes.  Always quote template expression brackets when they 
-start a value. For instance:            
+missing quotes.  Always quote template expression brackets when they
+start a value. For instance:
 
     with_items:
       - {{ foo }}
@@ -634,7 +731,7 @@ start a value. For instance:
 Should be written as:
 
     with_items:
-      - "{{ foo }}"      
+      - "{{ foo }}"
 
 """
         else:
@@ -699,11 +796,22 @@ def parse_kv(args):
                 options[k.strip()] = unquote(v.strip())
     return options
 
+def _validate_both_dicts(a, b):
+
+    if not (isinstance(a, dict) and isinstance(b, dict)):
+        raise errors.AnsibleError(
+            "failed to combine variables, expected dicts but got a '%s' and a '%s'" % (type(a).__name__, type(b).__name__)
+        )
+
 def merge_hash(a, b):
     ''' recursively merges hash b into a
     keys from b take precedence over keys from a '''
 
     result = {}
+
+    # we check here as well as in combine_vars() since this
+    # function can work recursively with nested dicts
+    _validate_both_dicts(a, b)
 
     for dicts in a, b:
         # next, iterate over b keys and values
@@ -719,55 +827,26 @@ def merge_hash(a, b):
 
     return result
 
-def md5s(data):
-    ''' Return MD5 hex digest of data. '''
-
-    digest = _md5()
-    try:
-        digest.update(data)
-    except UnicodeEncodeError:
-        digest.update(data.encode('utf-8'))
-    return digest.hexdigest()
-
-def md5(filename):
-    ''' Return MD5 hex digest of local file, None if file is not present or a directory. '''
-
-    if not os.path.exists(filename) or os.path.isdir(filename):
-        return None
-    digest = _md5()
-    blocksize = 64 * 1024
-    try:
-        infile = open(filename, 'rb')
-        block = infile.read(blocksize)
-        while block:
-            digest.update(block)
-            block = infile.read(blocksize)
-        infile.close()
-    except IOError, e:
-        raise errors.AnsibleError("error while accessing the file %s, error was: %s" % (filename, e))
-    return digest.hexdigest()
-
 def default(value, function):
     ''' syntactic sugar around lazy evaluation of defaults '''
     if value is None:
         return function()
     return value
 
-def _gitinfo():
+
+def _git_repo_info(repo_path):
     ''' returns a string containing git branch, commit id and commit date '''
     result = None
-    repo_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '.git')
-
     if os.path.exists(repo_path):
         # Check if the .git is a file. If it is a file, it means that we are in a submodule structure.
         if os.path.isfile(repo_path):
             try:
                 gitdir = yaml.safe_load(open(repo_path)).get('gitdir')
-                # There is a posibility the .git file to have an absolute path.
+                # There is a possibility the .git file to have an absolute path.
                 if os.path.isabs(gitdir):
                     repo_path = gitdir
                 else:
-                    repo_path = os.path.join(repo_path.split('.git')[0], gitdir)
+                    repo_path = os.path.join(repo_path[:-4], gitdir)
             except (IOError, AttributeError):
                 return ''
         f = open(os.path.join(repo_path, "HEAD"))
@@ -778,23 +857,75 @@ def _gitinfo():
             f = open(branch_path)
             commit = f.readline()[:10]
             f.close()
-            date = time.localtime(os.stat(branch_path).st_mtime)
-            if time.daylight == 0:
-                offset = time.timezone
-            else:
-                offset = time.altzone
-            result = "({0} {1}) last updated {2} (GMT {3:+04d})".format(branch, commit,
-                time.strftime("%Y/%m/%d %H:%M:%S", date), offset / -36)
+        else:
+            # detached HEAD
+            commit = branch[:10]
+            branch = 'detached HEAD'
+            branch_path = os.path.join(repo_path, "HEAD")
+
+        date = time.localtime(os.stat(branch_path).st_mtime)
+        if time.daylight == 0:
+            offset = time.timezone
+        else:
+            offset = time.altzone
+        result = "({0} {1}) last updated {2} (GMT {3:+04d})".format(branch, commit,
+            time.strftime("%Y/%m/%d %H:%M:%S", date), offset / -36)
     else:
         result = ''
     return result
+
+
+def _gitinfo():
+    basedir = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+    repo_path = os.path.join(basedir, '.git')
+    result = _git_repo_info(repo_path)
+    submodules = os.path.join(basedir, '.gitmodules')
+    if not os.path.exists(submodules):
+       return result
+    f = open(submodules)
+    for line in f:
+        tokens = line.strip().split(' ')
+        if tokens[0] == 'path':
+            submodule_path = tokens[2]
+            submodule_info =_git_repo_info(os.path.join(basedir, submodule_path, '.git'))
+            if not submodule_info:
+                submodule_info = ' not found - use git submodule update --init ' + submodule_path
+            result += "\n  {0}: {1}".format(submodule_path, submodule_info)
+    f.close()
+    return result
+
 
 def version(prog):
     result = "{0} {1}".format(prog, __version__)
     gitinfo = _gitinfo()
     if gitinfo:
         result = result + " {0}".format(gitinfo)
+    result = result + "\n  configured module search path = %s" % C.DEFAULT_MODULE_PATH
     return result
+
+def version_info(gitinfo=False):
+    if gitinfo:
+        # expensive call, user with care
+        ansible_version_string = version('')
+    else:
+        ansible_version_string = __version__
+    ansible_version = ansible_version_string.split()[0]
+    ansible_versions = ansible_version.split('.')
+    for counter in range(len(ansible_versions)):
+        if ansible_versions[counter] == "":
+            ansible_versions[counter] = 0
+        try:
+            ansible_versions[counter] = int(ansible_versions[counter])
+        except:
+            pass
+    if len(ansible_versions) < 3:
+        for counter in range(len(ansible_versions), 3):
+            ansible_versions.append(0)
+    return {'string':      ansible_version_string.strip(),
+            'full':        ansible_version,
+            'major':       ansible_versions[0],
+            'minor':       ansible_versions[1],
+            'revision':    ansible_versions[2]}
 
 def getch():
     ''' read in a single character '''
@@ -807,39 +938,29 @@ def getch():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
 
-def sanitize_output(str):
+def sanitize_output(arg_string):
     ''' strips private info out of a string '''
 
-    private_keys = ['password', 'login_password']
+    private_keys = ('password', 'login_password')
 
-    filter_re = [
-        # filter out things like user:pass@foo/whatever
-        # and http://username:pass@wherever/foo
-        re.compile('^(?P<before>.*:)(?P<password>.*)(?P<after>\@.*)$'),
-    ]
-
-    parts = str.split()
-    output = ''
-    for part in parts:
+    output = []
+    for part in arg_string.split():
         try:
-            (k,v) = part.split('=', 1)
-            if k in private_keys:
-                output += " %s=VALUE_HIDDEN" % k
-            else:
-                found = False
-                for filter in filter_re:
-                    m = filter.match(v)
-                    if m:
-                        d = m.groupdict()
-                        output += " %s=%s" % (k, d['before'] + "********" + d['after'])
-                        found = True
-                        break
-                if not found:
-                    output += " %s" % part
-        except:
-            output += " %s" % part
+            (k, v) = part.split('=', 1)
+        except ValueError:
+            v = heuristic_log_sanitize(part)
+            output.append(v)
+            continue
 
-    return output.strip()
+        if k in private_keys:
+            v = 'VALUE_HIDDEN'
+        else:
+            v = heuristic_log_sanitize(v)
+        output.append('%s=%s' % (k, v))
+
+    output = ' '.join(output)
+    return output
+
 
 ####################################################################
 # option handling code for /usr/bin/ansible and ansible-playbook
@@ -869,15 +990,15 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
     parser.add_option('-i', '--inventory-file', dest='inventory',
         help="specify inventory host file (default=%s)" % constants.DEFAULT_HOST_LIST,
         default=constants.DEFAULT_HOST_LIST)
+    parser.add_option('-e', '--extra-vars', dest="extra_vars", action="append",
+        help="set additional variables as key=value or YAML/JSON", default=[])
+    parser.add_option('-u', '--user', default=constants.DEFAULT_REMOTE_USER, dest='remote_user',
+        help='connect as this user (default=%s)' % constants.DEFAULT_REMOTE_USER)
     parser.add_option('-k', '--ask-pass', default=False, dest='ask_pass', action='store_true',
         help='ask for SSH password')
-    parser.add_option('--private-key', default=C.DEFAULT_PRIVATE_KEY_FILE, dest='private_key_file',
+    parser.add_option('--private-key', default=constants.DEFAULT_PRIVATE_KEY_FILE, dest='private_key_file',
         help='use this file to authenticate the connection')
-    parser.add_option('-K', '--ask-sudo-pass', default=False, dest='ask_sudo_pass', action='store_true',
-        help='ask for sudo password')
-    parser.add_option('--ask-su-pass', default=False, dest='ask_su_pass', action='store_true', 
-        help='ask for su password')
-    parser.add_option('--ask-vault-pass', default=False, dest='ask_vault_pass', action='store_true', 
+    parser.add_option('--ask-vault-pass', default=False, dest='ask_vault_pass', action='store_true',
         help='ask for vault password')
     parser.add_option('--vault-password-file', default=constants.DEFAULT_VAULT_PASSWORD_FILE,
         dest='vault_password_file', help="vault password file")
@@ -902,22 +1023,35 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
             help='log output to this directory')
 
     if runas_opts:
-        parser.add_option("-s", "--sudo", default=constants.DEFAULT_SUDO, action="store_true",
-            dest='sudo', help="run operations with sudo (nopasswd)")
+        # priv user defaults to root later on to enable detecting when this option was given here
+        parser.add_option('-K', '--ask-sudo-pass', default=False, dest='ask_sudo_pass', action='store_true',
+            help='ask for sudo password (deprecated, use become)')
+        parser.add_option('--ask-su-pass', default=False, dest='ask_su_pass', action='store_true',
+            help='ask for su password (deprecated, use become)')
+        parser.add_option("-s", "--sudo", default=constants.DEFAULT_SUDO, action="store_true", dest='sudo',
+            help="run operations with sudo (nopasswd) (deprecated, use become)")
         parser.add_option('-U', '--sudo-user', dest='sudo_user', default=None,
-                          help='desired sudo user (default=root)')  # Can't default to root because we need to detect when this option was given
-        parser.add_option('-u', '--user', default=constants.DEFAULT_REMOTE_USER,
-            dest='remote_user', help='connect as this user (default=%s)' % constants.DEFAULT_REMOTE_USER)
+                          help='desired sudo user (default=root) (deprecated, use become)')
+        parser.add_option('-S', '--su', default=constants.DEFAULT_SU, action='store_true',
+            help='run operations with su (deprecated, use become)')
+        parser.add_option('-R', '--su-user', default=None,
+            help='run operations with su as this user (default=%s) (deprecated, use become)' % constants.DEFAULT_SU_USER)
 
-        parser.add_option('-S', '--su', default=constants.DEFAULT_SU,
-                          action='store_true', help='run operations with su')
-        parser.add_option('-R', '--su-user', help='run operations with su as this '
-                                                  'user (default=%s)' % constants.DEFAULT_SU_USER)
+        # consolidated privilege escalation (become)
+        parser.add_option("-b", "--become", default=constants.DEFAULT_BECOME, action="store_true", dest='become',
+            help="run operations with become (nopasswd implied)")
+        parser.add_option('--become-method', dest='become_method', default=constants.DEFAULT_BECOME_METHOD, type='string',
+            help="privilege escalation method to use (default=%s), valid choices: [ %s ]" % (constants.DEFAULT_BECOME_METHOD, ' | '.join(constants.BECOME_METHODS)))
+        parser.add_option('--become-user', default=None, dest='become_user', type='string',
+            help='run operations as this user (default=%s)' % constants.DEFAULT_BECOME_USER)
+        parser.add_option('--ask-become-pass', default=False, dest='become_ask_pass', action='store_true',
+            help='ask for privilege escalation password')
+
 
     if connect_opts:
         parser.add_option('-c', '--connection', dest='connection',
-                          default=C.DEFAULT_TRANSPORT,
-                          help="connection type to use (default=%s)" % C.DEFAULT_TRANSPORT)
+                          default=constants.DEFAULT_TRANSPORT,
+                          help="connection type to use (default=%s)" % constants.DEFAULT_TRANSPORT)
 
     if async_opts:
         parser.add_option('-P', '--poll', default=constants.DEFAULT_POLL_INTERVAL, type='int',
@@ -936,8 +1070,22 @@ def base_parser(constants=C, usage="", output_opts=False, runas_opts=False,
             help="when changing (small) files and templates, show the differences in those files; works great with --check"
         )
 
-
     return parser
+
+def parse_extra_vars(extra_vars_opts, vault_pass):
+    extra_vars = {}
+    for extra_vars_opt in extra_vars_opts:
+        extra_vars_opt = to_unicode(extra_vars_opt)
+        if extra_vars_opt.startswith(u"@"):
+            # Argument is a YAML file (JSON is a subset of YAML)
+            extra_vars = combine_vars(extra_vars, parse_yaml_from_file(extra_vars_opt[1:], vault_password=vault_pass))
+        elif extra_vars_opt and extra_vars_opt[0] in u'[{':
+            # Arguments as YAML
+            extra_vars = combine_vars(extra_vars, parse_yaml(extra_vars_opt))
+        else:
+            # Arguments as Key-value
+            extra_vars = combine_vars(extra_vars, parse_kv(extra_vars_opt))
+    return extra_vars
 
 def ask_vault_passwords(ask_vault_pass=False, ask_new_vault_pass=False, confirm_vault=False, confirm_new=False):
 
@@ -962,36 +1110,64 @@ def ask_vault_passwords(ask_vault_pass=False, ask_new_vault_pass=False, confirm_
 
     # enforce no newline chars at the end of passwords
     if vault_pass:
-        vault_pass = vault_pass.strip()
+        vault_pass = to_bytes(vault_pass, errors='strict', nonstring='simplerepr').strip()
     if new_vault_pass:
-        new_vault_pass = new_vault_pass.strip()
+        new_vault_pass = to_bytes(new_vault_pass, errors='strict', nonstring='simplerepr').strip()
 
     return vault_pass, new_vault_pass
 
-def ask_passwords(ask_pass=False, ask_sudo_pass=False, ask_su_pass=False, ask_vault_pass=False):
+def ask_passwords(ask_pass=False, become_ask_pass=False, ask_vault_pass=False, become_method=C.DEFAULT_BECOME_METHOD):
     sshpass = None
-    sudopass = None
-    su_pass = None
-    vault_pass = None
-    sudo_prompt = "sudo password: "
-    su_prompt = "su password: "
+    becomepass = None
+    vaultpass = None
+    become_prompt = ''
 
     if ask_pass:
         sshpass = getpass.getpass(prompt="SSH password: ")
-        sudo_prompt = "sudo password [defaults to SSH password]: "
+        become_prompt = "%s password[defaults to SSH password]: " % become_method.upper()
+        if sshpass:
+            sshpass = to_bytes(sshpass, errors='strict', nonstring='simplerepr')
+    else:
+        become_prompt = "%s password: " % become_method.upper()
 
-    if ask_sudo_pass:
-        sudopass = getpass.getpass(prompt=sudo_prompt)
-        if ask_pass and sudopass == '':
-            sudopass = sshpass
-
-    if ask_su_pass:
-        su_pass = getpass.getpass(prompt=su_prompt)
+    if become_ask_pass:
+        becomepass = getpass.getpass(prompt=become_prompt)
+        if ask_pass and becomepass == '':
+            becomepass = sshpass
+        if becomepass:
+            becomepass = to_bytes(becomepass)
 
     if ask_vault_pass:
-        vault_pass = getpass.getpass(prompt="Vault password: ")
+        vaultpass = getpass.getpass(prompt="Vault password: ")
+        if vaultpass:
+            vaultpass = to_bytes(vaultpass, errors='strict', nonstring='simplerepr').strip()
 
-    return (sshpass, sudopass, su_pass, vault_pass)
+    return (sshpass, becomepass, vaultpass)
+
+
+def choose_pass_prompt(options):
+
+    if options.ask_su_pass:
+        return 'su'
+    elif options.ask_sudo_pass:
+        return 'sudo'
+
+    return options.become_method
+
+def normalize_become_options(options):
+
+    options.become_ask_pass = options.become_ask_pass or options.ask_sudo_pass or options.ask_su_pass or C.DEFAULT_BECOME_ASK_PASS
+    options.become_user = options.become_user or options.sudo_user or options.su_user or C.DEFAULT_BECOME_USER
+
+    if options.become:
+        pass
+    elif options.sudo:
+        options.become = True
+        options.become_method = 'sudo'
+    elif options.su:
+        options.become = True
+        options.become_method = 'su'
+
 
 def do_encrypt(result, encrypt, salt_size=None, salt=None):
     if PASSLIB_AVAILABLE:
@@ -1030,11 +1206,10 @@ def filter_leading_non_json_lines(buf):
     filter only leading lines since multiline JSON is valid.
     '''
 
-    kv_regex = re.compile(r'\w=\w')
     filtered_lines = StringIO.StringIO()
     stop_filtering = False
     for line in buf.splitlines():
-        if stop_filtering or line.startswith('{') or line.startswith('[') or kv_regex.search(line):
+        if stop_filtering or line.startswith('{') or line.startswith('['):
             stop_filtering = True
             filtered_lines.write(line + '\n')
     return filtered_lines.getvalue()
@@ -1046,46 +1221,64 @@ def boolean(value):
     else:
         return False
 
-def make_sudo_cmd(sudo_user, executable, cmd):
+def make_become_cmd(cmd, user, shell, method, flags=None, exe=None):
+    """
+    helper function for connection plugins to create privilege escalation commands
+    """
+
+    randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
+    success_key = 'BECOME-SUCCESS-%s' % randbits
+    prompt = None
+    becomecmd = None
+
+    shell = shell or '$SHELL'
+
+    if method == 'sudo':
+        # Rather than detect if sudo wants a password this time, -k makes sudo always ask for
+        # a password if one is required. Passing a quoted compound command to sudo (or sudo -s)
+        # directly doesn't work, so we shellquote it with pipes.quote() and pass the quoted
+        # string to the user's shell.  We loop reading output until we see the randomly-generated
+        # sudo prompt set with the -p option.
+        prompt = '[sudo via ansible, key=%s] password: ' % randbits
+        exe = exe or C.DEFAULT_SUDO_EXE
+        becomecmd = '%s -k && %s %s -S -p "%s" -u %s %s -c %s' % \
+            (exe, exe, flags or C.DEFAULT_SUDO_FLAGS, prompt, user, shell, pipes.quote('echo %s; %s' % (success_key, cmd)))
+
+    elif method == 'su':
+        exe = exe or C.DEFAULT_SU_EXE
+        flags = flags or C.DEFAULT_SU_FLAGS
+        becomecmd = '%s %s %s -c "%s -c %s"' % (exe, flags, user, shell, pipes.quote('echo %s; %s' % (success_key, cmd)))
+
+    elif method == 'pbrun':
+        prompt = 'assword:'
+        exe = exe or 'pbrun'
+        flags = flags or ''
+        becomecmd = '%s -b -l %s -u %s "%s"' % (exe, flags, user, pipes.quote('echo %s; %s' % (success_key,cmd)))
+
+    elif method == 'pfexec':
+        exe = exe or 'pfexec'
+        flags = flags or ''
+        # No user as it uses it's own exec_attr to figure it out
+        becomecmd = '%s %s "%s"' % (exe, flags, pipes.quote('echo %s; %s' % (success_key,cmd)))
+
+    if becomecmd is None:
+        raise errors.AnsibleError("Privilege escalation method not found: %s" % method)
+
+    return (('%s -c ' % shell) + pipes.quote(becomecmd), prompt, success_key)
+
+
+def make_sudo_cmd(sudo_exe, sudo_user, executable, cmd):
     """
     helper function for connection plugins to create sudo commands
     """
-    # Rather than detect if sudo wants a password this time, -k makes
-    # sudo always ask for a password if one is required.
-    # Passing a quoted compound command to sudo (or sudo -s)
-    # directly doesn't work, so we shellquote it with pipes.quote()
-    # and pass the quoted string to the user's shell.  We loop reading
-    # output until we see the randomly-generated sudo prompt set with
-    # the -p option.
-    randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
-    prompt = '[sudo via ansible, key=%s] password: ' % randbits
-    success_key = 'SUDO-SUCCESS-%s' % randbits
-    sudocmd = '%s -k && %s %s -S -p "%s" -u %s %s -c %s' % (
-        C.DEFAULT_SUDO_EXE, C.DEFAULT_SUDO_EXE, C.DEFAULT_SUDO_FLAGS,
-        prompt, sudo_user, executable or '$SHELL', pipes.quote('echo %s; %s' % (success_key, cmd)))
-    return ('/bin/sh -c ' + pipes.quote(sudocmd), prompt, success_key)
+    return make_become_cmd(cmd, sudo_user, executable, 'sudo', C.DEFAULT_SUDO_FLAGS, sudo_exe)
 
 
 def make_su_cmd(su_user, executable, cmd):
     """
     Helper function for connection plugins to create direct su commands
     """
-    # TODO: work on this function
-    randbits = ''.join(chr(random.randint(ord('a'), ord('z'))) for x in xrange(32))
-    prompt = '[Pp]assword: ?$'
-    success_key = 'SUDO-SUCCESS-%s' % randbits
-    sudocmd = '%s %s %s -c "%s -c %s"' % (
-        C.DEFAULT_SU_EXE, C.DEFAULT_SU_FLAGS, su_user, executable or '$SHELL',
-        pipes.quote('echo %s; %s' % (success_key, cmd))
-    )
-    return ('/bin/sh -c ' + pipes.quote(sudocmd), prompt, success_key)
-
-_TO_UNICODE_TYPES = (unicode, type(None))
-
-def to_unicode(value):
-    if isinstance(value, _TO_UNICODE_TYPES):
-        return value
-    return value.decode("utf-8")
+    return make_become_cmd(cmd, su_user, executable, 'su', C.DEFAULT_SU_FLAGS, C.DEFAULT_SU_EXE)
 
 def get_diff(diff):
     # called by --diff usage in playbook and runner via callbacks
@@ -1142,6 +1335,22 @@ def list_intersection(a, b):
             result.append(x)
     return result
 
+def list_difference(a, b):
+    result = []
+    for x in a:
+        if x not in b and x not in result:
+            result.append(x)
+    for x in b:
+        if x not in a and x not in result:
+            result.append(x)
+    return result
+
+def contains_vars(data):
+    '''
+    returns True if the data contains a variable pattern
+    '''
+    return "$" in data or "{{" in data
+
 def safe_eval(expr, locals={}, include_exceptions=False):
     '''
     This is intended for allowing things like:
@@ -1157,8 +1366,8 @@ def safe_eval(expr, locals={}, include_exceptions=False):
     http://stackoverflow.com/questions/12523516/using-ast-and-whitelists-to-make-pythons-eval-safe
     '''
 
-    # this is the whitelist of AST nodes we are going to 
-    # allow in the evaluation. Any node type other than 
+    # this is the whitelist of AST nodes we are going to
+    # allow in the evaluation. Any node type other than
     # those listed here will raise an exception in our custom
     # visitor class defined below.
     SAFE_NODES = set(
@@ -1277,6 +1486,8 @@ def listify_lookup_plugin_terms(terms, basedir, inject):
 
 def combine_vars(a, b):
 
+    _validate_both_dicts(a, b)
+
     if C.DEFAULT_HASH_BEHAVIOUR == "merge":
         return merge_hash(a, b)
     else:
@@ -1360,7 +1571,7 @@ def _load_vars_from_path(path, results, vault_password=None):
                 % (path, err2.strerror, ))
         # follow symbolic link chains by recursing, so we repeat the same
         # permissions checks above and provide useful errors.
-        return _load_vars_from_path(target, results)
+        return _load_vars_from_path(target, results, vault_password)
 
     # directory
     if stat.S_ISDIR(pathstat.st_mode):
@@ -1410,4 +1621,40 @@ def _load_vars_from_folder(folder_path, results, vault_password=None):
     for path in paths:
         _found, results = _load_vars_from_path(path, results, vault_password=vault_password)
     return results
+
+def update_hash(hash, key, new_value):
+    ''' used to avoid nested .update calls on the parent '''
+
+    value = hash.get(key, {})
+    value.update(new_value)
+    hash[key] = value
+
+def censor_unlogged_data(data):
+    '''
+    used when the no_log: True attribute is passed to a task to keep data from a callback.
+    NOT intended to prevent variable registration, but only things from showing up on
+    screen
+    '''
+    new_data = {}
+    for (x,y) in data.iteritems():
+       if x in [ 'skipped', 'changed', 'failed', 'rc' ]:
+           new_data[x] = y
+    new_data['censored'] = 'results hidden due to no_log parameter'
+    return new_data
+
+def check_mutually_exclusive_privilege(options, parser):
+
+    # privilege escalation command line arguments need to be mutually exclusive
+    if (options.su or options.su_user or options.ask_su_pass) and \
+                (options.sudo or options.sudo_user or options.ask_sudo_pass) or \
+        (options.su or options.su_user or options.ask_su_pass) and \
+                (options.become or options.become_user or options.become_ask_pass) or \
+        (options.sudo or options.sudo_user or options.ask_sudo_pass) and \
+                (options.become or options.become_user or options.become_ask_pass):
+
+            parser.error("Sudo arguments ('--sudo', '--sudo-user', and '--ask-sudo-pass') "
+                         "and su arguments ('-su', '--su-user', and '--ask-su-pass') "
+                         "and become arguments ('--become', '--become-user', and '--ask-become-pass')"
+                         " are exclusive of each other")
+
 
