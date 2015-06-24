@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Janos Guljas <janos@debian.org>
 Uploaders: Michael Vogt <mvo@debian.org>,
  Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>
-Build-Depends: debhelper (>= 9), python-all, python-crypto, 
+Build-Depends: debhelper (>= 9), python-all, python-crypto,
  python-setuptools, python-sphinx, python-yaml, asciidoc,
  python-nose, python-passlib
 Standards-Version: 3.9.5
@@ -14,7 +14,7 @@ Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/ansible.git
 
 Package: ansible
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends}, python-crypto, python-yaml, 
+Depends: ${misc:Depends}, ${python:Depends}, python-crypto, python-yaml,
  openssh-client | python-paramiko, python-jinja2, python-httplib2
 Recommends: python-selinux
 Suggests: ansible-doc, sshpass
@@ -58,17 +58,3 @@ Description: Ansible fireball transport support for nodes
  .
  This package is a dependency package, which depends on Python modules for
  keyczar and ZeroMQ.
-
-Package: ansible-doc
-Architecture: all
-Section: doc
-Depends: ${misc:Depends}, libjs-jquery, libjs-underscore
-Description: Ansible documentation and examples
- Ansible is a radically simple model-driven configuration management,
- multi-node deployment, and remote task execution system. Ansible works
- over SSH and does not require any software or daemons to be installed
- on remote nodes. Extension modules can be written in any language and
- are transferred to managed machines automatically.
- .
- This package contains HTML documentation and examples.
-
