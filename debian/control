@@ -3,7 +3,7 @@ Section: admin
 Priority: optional
 Maintainer: Janos Guljas <janos@debian.org>
 Uploaders: Michael Vogt <mvo@debian.org>,
- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>
+ Harlan Lieberman-Berg <hlieberman@setec.io>
 Build-Depends: debhelper (>= 9), python-all, python-crypto,
  python-setuptools, python-sphinx, python-yaml, asciidoc,
  python-nose, python-passlib, dh-python

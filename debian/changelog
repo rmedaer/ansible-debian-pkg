@@ -1,3 +1,11 @@
+ansible (1.9.1+dfsg-1) experimental; urgency=medium
+
+  * New upstream version.
+  * Heavy refactoring due to upstream release changes
+  * New, comprehensive d/copyright.
+
+ -- Harlan Lieberman-Berg <hlieberman@setec.io>  Wed, 27 May 2015 16:41:16 -0400
+
 ansible (1.7.2+dfsg-2) unstable; urgency=low
 
   * Add updated paths to d/copyright.
@@ -173,7 +181,7 @@ ansible (1.3.4+dfsg-1) unstable; urgency=low
   * Change docsite generation to not expect docs as part of a wordpress install.
   * Add trivial patch to fix lintian error with rpm-key script.
   * Add patch header information to fix-html-makefile.
-  
+
   [ Michael Vogt ]
   * add myself to uploader
   * build/ship the module manpages for ansible in the ansible package
@@ -190,7 +198,7 @@ ansible (1.2.1+dfsg-1) unstable; urgency=low
 ansible (1.1+dfsg-1) unstable; urgency=low
 
   * New upstream release.
-  * Update patches disable-google-analytics.patch and 
+  * Update patches disable-google-analytics.patch and
     remove-external-image.patch to apply cleanly.
   * Add remove-external-footer-image.patch to remove link on external resource.
   * Add remove-external-training-references.patch:
