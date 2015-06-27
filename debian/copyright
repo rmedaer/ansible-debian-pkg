@@ -13,7 +13,8 @@ Copyright: 2014, AJ Bourg <aj@ajbourg.com>
 License: GPL-3+
 
 Files:
- plugins/inventory/docker.{py,ini}
+ plugins/inventory/docker.py
+ plugins/inventory/docker.yml
  lib/ansible/modules/core/cloud/rackspace/rax_files.py
  lib/ansible/modules/core/cloud/rackspace/rax_files_objects.py
  lib/ansible/modules/core/windows/win_get_url.ps1
@@ -72,7 +73,8 @@ Copyright:
 License: GPL-3+
 
 Files:
- plugins/inventory/gce.{py,ini}
+ plugins/inventory/gce.py
+ plugins/inventory/gce.ini
  lib/ansible/modules/core/cloud/google/gce*
  lib/ansible/modules/extras/cloud/google/gce_img.py
 Copyright: 2013, 2015, Google, Inc.
@@ -103,7 +105,7 @@ License: GPL-3+
 
 Files:
  plugins/inventory/consul_io.py
- lib/ansible/runner/lookup_modules/consul_kv.py
+ lib/ansible/runner/lookup_plugins/consul_kv.py
 Copyright: 2015, Steve Gargan <steve.gargan@gmail.com>
 License: GPL-3+
 
@@ -145,7 +147,8 @@ License: GPL-3+
 
 Files:
  plugins/callbacks/hipchat.py
- lib/ansible/modules/core/windows/win_msi.{ps1,py}
+ lib/ansible/modules/core/windows/win_msi.ps1
+ lib/ansible/modules/core/windows/win_msi.py
  lib/ansible/modules/core/windows/win_user.py
  lib/ansible/modules/extras/notification/nexmo.py
  lib/ansible/utils/module_docs_fragments/files.py
@@ -163,7 +166,7 @@ Files:
  lib/ansible/modules/core/files/assemble.py
  lib/ansible/modules/core/system/group.py
  lib/ansible/modules/core/system/seboolean.py
- lib/ansible/modules/core/sytem/user.py
+ lib/ansible/modules/core/system/user.py
 Copyright: 2012, Stephen Fromm <sfromm@gmail.com>
 License: GPL-3+
 
@@ -266,8 +269,10 @@ Copyright: 2013, Google, Inc.
 License: GPL-3+
 
 Files:
- lib/ansible/modules/core/windows/win_service.{ps1,py}
- lib/ansible/modules/core/windows/win_group.{ps1,py}
+ lib/ansible/modules/core/windows/win_service.ps1
+ lib/ansible/modules/core/windows/win_service.py
+ lib/ansible/modules/core/windows/win_group.ps1
+ lib/ansible/modules/core/windows/win_group.py
  lib/ansible/modules/extras/packaging/language/npm.py
 Copyright: 2013, 2014, Chris Hoffman <choffman@chathamfinancial.com>
 License: GPL-3+
@@ -285,7 +290,7 @@ Files:
 Copyright: 2012, Matt Wright <matt@nobien.net>
 License: GPL-3+
 
-Files: lib/ansible/modules/core/web_infrastructure/django_manpage.py
+Files: lib/ansible/modules/core/web_infrastructure/django_manage.py
 Copyright: 2013, Scott Anderson <scottanderson42@gmail.com>
 License: GPL-3+
 
@@ -395,7 +400,7 @@ Files:
  lib/ansible/modules/extras/system/debconf.py
  lib/ansible/runner/action_plugins/patch.py
  lib/ansible/runner/lookup_plugins/url.py
- lib/ansible/runnner/filter_plugins/mathstuff.py
+ lib/ansible/runner/filter_plugins/mathstuff.py
 Copyright: 2014-2015, Brian Coca <brian.coca+dev@gmail.com>
 License: GPL-3+
 
@@ -503,7 +508,11 @@ Files: lib/ansible/modules/extras/web_infrastructure/ejabberd_user.py
 Copyright: 2013, Peter Sprygada <sprygada@gmail.com>
 License: GPL-3+
 
-Files: lib/ansible/modules/extras/network/f5/bigip_{facts,pool,node,pool_member}.py
+Files:
+ lib/ansible/modules/extras/network/f5/bigip_facts.py
+ lib/ansible/modules/extras/network/f5/bigip_pool.py
+ lib/ansible/modules/extras/network/f5/bigip_node.py
+ lib/ansible/modules/extras/network/f5/bigip_pool_member.py
 Copyright: 2013, Matt Hite <mhite@hotmail.com>
 License: GPL-3+
 
@@ -599,7 +608,9 @@ Files: lib/ansible/modules/extras/packaging/os/svr4pkg.py
 Copyright: Boyd Adamson <boyd@boydadamson.com>
 License: GPL-3+
 
-Files: lib/ansible/modules/extras/packaging/os/homebrew_{tap,cask}.py
+Files:
+ lib/ansible/modules/extras/packaging/os/homebrew_tap.py
+ lib/ansible/modules/extras/packaging/os/homebrew_cask.py
 Copyright: 2013, Daniel Jaouen <dcj24@cornell.edu>
 License: GPL-3+
 
@@ -698,6 +709,7 @@ Files: lib/ansible/inventory/vars_plugins/noop.py
 Copyright:
  2012-2014, Michael DeHaan <michael.dehaan@gmail.com>
  2014, Serge van Ginderachter <serge@vanginderachter.be>
+License: GPL-3+
 
 Files:
  lib/ansible/module_utils/known_hosts.py
@@ -737,7 +749,12 @@ Files: lib/ansible/module_utils/redhat.py
 Copyright: James Laska
 License: BSD-2-Clause
 
-Files: lib/ansible/cache/{memcached,base,redis,jsonfile,memory}.py
+Files:
+ lib/ansible/cache/memcached.py
+ lib/ansible/cache/base.py
+ lib/ansible/cache/redis.py
+ lib/ansible/cache/jsonfile.py
+ lib/ansible/cache/memory.py
 Copyright:
  2014, Brian Coca
  2014, Josh Drake
@@ -880,7 +897,7 @@ License: BSD-2-Clause
  WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  POSSIBILITY OF SUCH DAMAGE.
 
-License: GPL-2
+License: GPL-2+
  This program is free software; you can redistribute it
  and/or modify it under the terms of the GNU General Public
  License as published by the Free Software Foundation; either
