@@ -71,6 +71,7 @@ lib/ansible/module_utils/urls.py
 lib/ansible/modules/__init__.py
 lib/ansible/modules/core/.git
 lib/ansible/modules/core/.gitignore
+lib/ansible/modules/core/.travis.yml
 lib/ansible/modules/core/CONTRIBUTING.md
 lib/ansible/modules/core/COPYING
 lib/ansible/modules/core/README.md
@@ -244,8 +245,12 @@ lib/ansible/modules/core/web_infrastructure/supervisorctl.py
 lib/ansible/modules/core/windows/__init__.py
 lib/ansible/modules/core/windows/setup.ps1
 lib/ansible/modules/core/windows/slurp.ps1
+lib/ansible/modules/core/windows/win_copy.ps1
+lib/ansible/modules/core/windows/win_copy.py
 lib/ansible/modules/core/windows/win_feature.ps1
 lib/ansible/modules/core/windows/win_feature.py
+lib/ansible/modules/core/windows/win_file.ps1
+lib/ansible/modules/core/windows/win_file.py
 lib/ansible/modules/core/windows/win_get_url.ps1
 lib/ansible/modules/core/windows/win_get_url.py
 lib/ansible/modules/core/windows/win_group.ps1
@@ -258,10 +263,12 @@ lib/ansible/modules/core/windows/win_service.ps1
 lib/ansible/modules/core/windows/win_service.py
 lib/ansible/modules/core/windows/win_stat.ps1
 lib/ansible/modules/core/windows/win_stat.py
+lib/ansible/modules/core/windows/win_template.py
 lib/ansible/modules/core/windows/win_user.ps1
 lib/ansible/modules/core/windows/win_user.py
 lib/ansible/modules/extras/.git
 lib/ansible/modules/extras/.gitignore
+lib/ansible/modules/extras/.travis.yml
 lib/ansible/modules/extras/CONTRIBUTING.md
 lib/ansible/modules/extras/COPYING
 lib/ansible/modules/extras/README.md

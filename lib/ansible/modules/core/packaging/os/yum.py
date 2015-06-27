@@ -26,6 +26,11 @@ import traceback
 import os
 import yum
 import rpm
+import syslog
+import platform
+import tempfile
+import shutil
+from distutils.version import LooseVersion
 
 try:
     from yum.misc import find_unfinished_transactions, find_ts_remaining
@@ -147,8 +152,6 @@ if not os.path.exists(repoquery):
 
 yumbin='/usr/bin/yum'
 
-import syslog
-
 def log(msg):
     syslog.openlog('ansible-yum', 0, syslog.LOG_USER)
     syslog.syslog(syslog.LOG_NOTICE, msg)
@@ -160,6 +163,14 @@ def yum_base(conf_file=None):
     my.preconf.errorlevel=0
     if conf_file and os.path.exists(conf_file):
         my.preconf.fn = conf_file
+    if os.geteuid() != 0:
+        if hasattr(my, 'setCacheDir'):
+            my.setCacheDir()
+        else:
+            cachedir = yum.misc.getCacheDir()
+            my.repos.setCacheDir(cachedir)
+            my.conf.cache = 0
+
     return my
 
 def install_yum_utils(module):
@@ -180,8 +191,11 @@ def po_to_nevra(po):
     else:
         return '%s-%s-%s.%s' % (po.name, po.version, po.release, po.arch)
 
-def is_installed(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=[], dis_repos=[], is_pkg=False):
-
+def is_installed(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=None, dis_repos=None, is_pkg=False):
+    if en_repos is None:
+        en_repos = []
+    if dis_repos is None:
+        dis_repos = []
     if not repoq:
 
         pkgs = []
@@ -219,7 +233,11 @@ def is_installed(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=[], dis_
             
     return []
 
-def is_available(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=[], dis_repos=[]):
+def is_available(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=None, dis_repos=None):
+    if en_repos is None:
+        en_repos = []
+    if dis_repos is None:
+        dis_repos = []
 
     if not repoq:
 
@@ -256,10 +274,13 @@ def is_available(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=[], dis_
         else:
             module.fail_json(msg='Error from repoquery: %s: %s' % (cmd, err))
 
-            
     return []
 
-def is_update(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=[], dis_repos=[]):
+def is_update(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=None, dis_repos=None):
+    if en_repos is None:
+        en_repos = []
+    if dis_repos is None:
+        dis_repos = []
 
     if not repoq:
 
@@ -306,7 +327,11 @@ def is_update(module, repoq, pkgspec, conf_file, qf=def_qf, en_repos=[], dis_rep
             
     return []
 
-def what_provides(module, repoq, req_spec, conf_file,  qf=def_qf, en_repos=[], dis_repos=[]):
+def what_provides(module, repoq, req_spec, conf_file,  qf=def_qf, en_repos=None, dis_repos=None):
+    if en_repos is None:
+        en_repos = []
+    if dis_repos is None:
+        dis_repos = []
 
     if not repoq:
 
@@ -462,11 +487,13 @@ def list_stuff(module, conf_file, stuff):
 
 def install(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
 
+    pkgs = []
     res = {}
     res['results'] = []
     res['msg'] = ''
     res['rc'] = 0
     res['changed'] = False
+    tempdir = tempfile.mkdtemp()
 
     for spec in items:
         pkg = None
@@ -489,6 +516,21 @@ def install(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
         # URL
         elif '://' in spec:
             pkg = spec
+            # Check if Enterprise Linux 5 or less, as yum on those versions do not support installing via url
+            distribution_version = get_distribution_version()
+            distribution = platform.dist()
+            if distribution[0] == "redhat" and LooseVersion(distribution_version) < LooseVersion("6"):
+                package = os.path.join(tempdir, str(pkg.rsplit('/', 1)[1]))
+                try:
+                    rsp, info = fetch_url(module, pkg)
+                    data = rsp.read()
+                    f = open(package, 'w')
+                    f.write(data)
+                    f.close()
+                    pkg = package
+                except Exception, e:
+                    shutil.rmtree(tempdir)
+                    module.fail_json(msg="Failure downloading %s, %s" % (spec, e))
 
         #groups :(
         elif  spec.startswith('@'):
@@ -501,9 +543,9 @@ def install(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
             # short circuit all the bs - and search for it as a pkg in is_installed
             # if you find it then we're done
             if not set(['*','?']).intersection(set(spec)):
-                pkgs = is_installed(module, repoq, spec, conf_file, en_repos=en_repos, dis_repos=dis_repos, is_pkg=True)
-                if pkgs:
-                    res['results'].append('%s providing %s is already installed' % (pkgs[0], spec))
+                installed_pkgs = is_installed(module, repoq, spec, conf_file, en_repos=en_repos, dis_repos=dis_repos, is_pkg=True)
+                if installed_pkgs:
+                    res['results'].append('%s providing %s is already installed' % (installed_pkgs[0], spec))
                     continue
             
             # look up what pkgs provide this
@@ -547,20 +589,30 @@ def install(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
             # the error we're catching here
             pkg = spec
 
-        cmd = yum_basecmd + ['install', pkg]
+        pkgs.append(pkg)
+
+    if pkgs:
+        cmd = yum_basecmd + ['install'] + pkgs
 
         if module.check_mode:
+            # Remove rpms downloaded for EL5 via url
+            try:
+                shutil.rmtree(tempdir)
+            except Exception, e:
+                module.fail_json(msg="Failure deleting temp directory %s, %s" % (tempdir, e))
             module.exit_json(changed=True)
 
         changed = True
 
         rc, out, err = module.run_command(cmd)
 
-        # Fail on invalid urls:
-        if (rc == 1 and '://' in spec and ('No package %s available.' % spec in out or 'Cannot open: %s. Skipping.' % spec in err)):
-            err = 'Package at %s could not be installed' % spec
-            module.fail_json(changed=False,msg=err,rc=1)
-        elif (rc != 0 and 'Nothing to do' in err) or 'Nothing to do' in out:
+        if (rc == 1):
+            for spec in items:
+                # Fail on invalid urls:
+                if ('://' in spec and ('No package %s available.' % spec in out or 'Cannot open: %s. Skipping.' % spec in err)):
+                    err = 'Package at %s could not be installed' % spec
+                    module.fail_json(changed=False,msg=err,rc=1)
+        if (rc != 0 and 'Nothing to do' in err) or 'Nothing to do' in out:
             # avoid failing in the 'Nothing To Do' case
             # this may happen with an URL spec.
             # for an already installed group,
@@ -570,22 +622,29 @@ def install(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
             out = '%s: Nothing to do' % spec
             changed = False
 
-        res['rc'] += rc
+        res['rc'] = rc
         res['results'].append(out)
         res['msg'] += err
 
         # FIXME - if we did an install - go and check the rpmdb to see if it actually installed
-        # look for the pkg in rpmdb
-        # look for the pkg via obsoletes
+        # look for each pkg in rpmdb
+        # look for each pkg via obsoletes
 
-        # accumulate any changes
-        res['changed'] |= changed
+        # Record change
+        res['changed'] = changed
 
+    # Remove rpms downloaded for EL5 via url
+    try:
+        shutil.rmtree(tempdir)
+    except Exception, e:
+        module.fail_json(msg="Failure deleting temp directory %s, %s" % (tempdir, e))
+  
     module.exit_json(**res)
 
 
 def remove(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
 
+    pkgs = []
     res = {}
     res['results'] = []
     res['msg'] = ''
@@ -602,17 +661,20 @@ def remove(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
                 res['results'].append('%s is not installed' % pkg)
                 continue
 
+        pkgs.append(pkg)
+
+    if pkgs:
         # run an actual yum transaction
-        cmd = yum_basecmd + ["remove", pkg]
+        cmd = yum_basecmd + ["remove"] + pkgs
 
         if module.check_mode:
             module.exit_json(changed=True)
 
         rc, out, err = module.run_command(cmd)
 
-        res['rc'] += rc
+        res['rc'] = rc
         res['results'].append(out)
-        res['msg'] += err
+        res['msg'] = err
 
         # compile the results into one batch. If anything is changed 
         # then mark changed
@@ -621,12 +683,13 @@ def remove(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
 
         # at this point we should check to see if the pkg is no longer present
         
-        if not is_group: # we can't sensibly check for a group being uninstalled reliably
-            # look to see if the pkg shows up from is_installed. If it doesn't
-            if not is_installed(module, repoq, pkg, conf_file, en_repos=en_repos, dis_repos=dis_repos):
-                res['changed'] = True
-            else:
-                module.fail_json(**res)
+        for pkg in pkgs:
+            if not pkg.startswith('@'): # we can't sensibly check for a group being uninstalled reliably
+                # look to see if the pkg shows up from is_installed. If it doesn't
+                if not is_installed(module, repoq, pkg, conf_file, en_repos=en_repos, dis_repos=dis_repos):
+                    res['changed'] = True
+                else:
+                    module.fail_json(**res)
 
         if rc != 0:
             module.fail_json(**res)
@@ -677,7 +740,7 @@ def latest(module, items, repoq, yum_basecmd, conf_file, en_repos, dis_repos):
                     nothing_to_do = False
                     break
                     
-                if basecmd == 'update' and is_update(module, repoq, this, conf_file, en_repos=en_repos, dis_repos=en_repos):
+                if basecmd == 'update' and is_update(module, repoq, this, conf_file, en_repos=en_repos, dis_repos=dis_repos):
                     nothing_to_do = False
                     break
                     
@@ -840,5 +903,7 @@ def main():
 
 # import module snippets
 from ansible.module_utils.basic import *
-main()
+from ansible.module_utils.urls import *
+if __name__ == '__main__':
+    main()
 

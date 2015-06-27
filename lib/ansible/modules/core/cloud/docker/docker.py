@@ -355,15 +355,14 @@ HAS_DOCKER_PY = True
 
 import sys
 import json
-import re
 import os
 import shlex
 from urlparse import urlparse
 try:
     import docker.client
     import docker.utils
-    from requests.exceptions import *
-except ImportError, e:
+    from requests.exceptions import RequestException
+except ImportError:
     HAS_DOCKER_PY = False
 
 if HAS_DOCKER_PY:
@@ -371,6 +370,13 @@ if HAS_DOCKER_PY:
         from docker.errors import APIError as DockerAPIError
     except ImportError:
         from docker.client import APIError as DockerAPIError
+    try:
+        # docker-py 1.2+
+        import docker.constants
+        DEFAULT_DOCKER_API_VERSION = docker.constants.DEFAULT_DOCKER_API_VERSION
+    except (ImportError, AttributeError):
+        # docker-py less than 1.2
+        DEFAULT_DOCKER_API_VERSION = docker.client.DEFAULT_DOCKER_API_VERSION
 
 
 def _human_to_bytes(number):
@@ -420,6 +426,13 @@ def get_split_image_tag(image):
         resource = image
 
     return resource, tag
+
+def normalize_image(image):
+    """
+    Normalize a Docker image name to include the implied :latest tag.
+    """
+
+    return ":".join(get_split_image_tag(image))
 
 
 def is_running(container):
@@ -522,7 +535,7 @@ class DockerManager(object):
             self.lxc_conf = []
             options = self.module.params.get('lxc_conf')
             for option in options:
-                parts = option.split(':')
+                parts = option.split(':', 1)
                 self.lxc_conf.append({"Key": parts[0], "Value": parts[1]})
 
         self.exposed_ports = None
@@ -554,8 +567,6 @@ class DockerManager(object):
                 docker_url = 'unix://var/run/docker.sock'
 
         docker_api_version = module.params.get('docker_api_version')
-        if not docker_api_version:
-            docker_api_version=docker.client.DEFAULT_DOCKER_API_VERSION
 
         tls_client_cert = module.params.get('tls_client_cert', None)
         if not tls_client_cert and env_cert_path:
@@ -805,7 +816,7 @@ class DockerManager(object):
         for image in self.client.images(name=image):
             if resource in image.get('RepoTags', []):
                 return image['RepoTags']
-        return None
+        return []
 
     def get_inspect_containers(self, containers):
         inspect = []
@@ -1110,17 +1121,23 @@ class DockerManager(object):
         if inspected:
             repo_tags = self.get_image_repo_tags()
         else:
-            image, tag = get_split_image_tag(self.module.params.get('image'))
-            repo_tags = [':'.join([image, tag])]
+            repo_tags = [normalize_image(self.module.params.get('image'))]
 
-        for i in self.client.containers(all=True):
-            running_image = i['Image']
-            running_command = i['Command'].strip()
-            match = False
+        for container in self.client.containers(all=True):
+            details = None
 
             if name:
-                matches = name in i.get('Names', [])
+                name_list = container.get('Names')
+                if name_list is None:
+                    name_list = []
+                matches = name in name_list
             else:
+                details = self.client.inspect_container(container['Id'])
+                details = _docker_id_quirk(details)
+
+                running_image = normalize_image(details['Config']['Image'])
+                running_command = container['Command'].strip()
+
                 image_matches = running_image in repo_tags
 
                 # if a container has an entrypoint, `command` will actually equal
@@ -1130,8 +1147,9 @@ class DockerManager(object):
                 matches = image_matches and command_matches
 
             if matches:
-                details = self.client.inspect_container(i['Id'])
-                details = _docker_id_quirk(details)
+                if not details:
+                    details = self.client.inspect_container(container['Id'])
+                    details = _docker_id_quirk(details)
 
                 deployed.append(details)
 
@@ -1415,7 +1433,7 @@ def main():
             tls_client_key  = dict(required=False, default=None, type='str'),
             tls_ca_cert     = dict(required=False, default=None, type='str'),
             tls_hostname    = dict(required=False, type='str', default=None),
-            docker_api_version = dict(),
+            docker_api_version = dict(required=False, default=DEFAULT_DOCKER_API_VERSION, type='str'),
             username        = dict(default=None),
             password        = dict(),
             email           = dict(),
@@ -1449,7 +1467,6 @@ def main():
         manager = DockerManager(module)
         count = int(module.params.get('count'))
         name = module.params.get('name')
-        image = module.params.get('image')
         pull = module.params.get('pull')
 
         state = module.params.get('state')
@@ -1470,7 +1487,6 @@ def main():
             manager.pull_image()
 
         containers = ContainerSet(manager)
-        failed = False
 
         if state == 'present':
             present(manager, containers, count, name)
