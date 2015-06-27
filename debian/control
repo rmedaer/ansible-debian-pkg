@@ -15,7 +15,8 @@ Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/ansible.git
 Package: ansible
 Architecture: all
 Depends: ${misc:Depends}, ${python:Depends}, python-crypto, python-yaml,
- openssh-client | python-paramiko, python-jinja2, python-httplib2
+ openssh-client | python-paramiko, python-jinja2, python-httplib2,
+ python-netaddr
 Recommends: python-selinux
 Suggests: ansible-doc, sshpass
 Description: Configuration management, deployment, and task execution system
