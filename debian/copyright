@@ -23,6 +23,12 @@ Files:
 Copyright: 2013-2014, Paul Durivage <paul.durivage@gmail.com>
 License: GPL-3+
 
+Files:
+ lib/ansible/modules/core/windows/win_copy.py
+ lib/ansible/modules/core/windows/win_file.py
+Copyright: 2015, Jon Hawkesworth (@jhawkesworth) <figs@unidy.demon.co.uk>
+License: GPL-3+
+
 Files: plugins/inventory/openstack.py
 Copyright:
  2012, Marco Vito Moscaritolo <marco@agavee.com>
@@ -51,13 +57,18 @@ Copyright: 2013, John Whitbeck
 License: GPL-3+
 
 Files:
- plugins/inventory/jail.py
  plugins/inventory/libvirt_lxc.py
  plugins/inventory/openshift.py
  lib/ansible/runner/connection_plugins/funcd.py
  lib/ansible/runner/connection_plugins/jail.py
  lib/ansible/runner/connection_plugins/libvirt_lxc.py
 Copyright: 2013, Michael Scherer <misc@zarb.org>
+License: GPL-3+
+
+Files: plugins/inventory/jail.py
+Copyright:
+ 2013, Michael Scherer <misc@zarb.org>
+ 2015, Toshio Kuratomi <tkuratomi@ansible.com>
 License: GPL-3+
 
 Files:
@@ -108,10 +119,14 @@ Files: plugins/inventory/ssh_config.py
 Copyright: 2014, Tomas Karasek <tomas.karasek@digile.fi>
 License: GPL-3+
 
-Files:
- plugins/inventory/zone.py
- lib/ansible/runner/connection_plugins/zone.py
+Files: plugins/inventory/zone.py
 Copyright: 2015, Dagobert Michelsen <dam@baltic-online.de>
+License: GPL-3+
+
+Files: lib/ansible/runner/connection_plugins/zone.py
+Copyright:
+ 2015, Dagobert Michelsen <dam@baltic-online.de>
+ 2015, Toshio Kuratomi <tkuratomi@ansible.com>
 License: GPL-3+
 
 Files:
@@ -382,6 +397,12 @@ Files:
  lib/ansible/runner/lookup_plugins/url.py
  lib/ansible/runnner/filter_plugins/mathstuff.py
 Copyright: 2014-2015, Brian Coca <brian.coca+dev@gmail.com>
+License: GPL-3+
+
+Files:
+ lib/ansible/modules/extras/notification/jabber.py
+ lib/ansible/modules/extras/system/svc.py
+Copyright: 2015, Brian Coca <bcoca@ansible.com>
 License: GPL-3+
 
 Files: lib/ansible/modules/extras/system/capabilities.py
@@ -681,13 +702,24 @@ Copyright:
 Files:
  lib/ansible/module_utils/known_hosts.py
  lib/ansible/module_utils/a10.py
- lib/ansible/module_utils/urls.py
  lib/ansible/module_utils/powershell.ps1
  lib/ansible/module_utils/ec2.py
  lib/ansible/module_utils/rax.py
  lib/ansible/module_utils/basic.py
 Copyright: 2012-2014, Michael DeHaan <michael.dehaan@gmail.com>
 License: BSD-2-Clause
+
+Files: lib/ansible/module_utils/urls.py
+Copyright:
+ 2012-2013, Michael DeHaan <michael.dehaan@gmail.com>
+ 2015, Toshio Kuratomi <tkuratomi@ansible.com>
+ 2001-2014, Python Software Foundation; All Rights Reserved
+License: BSD-2-Clause and PSFLv2
+Comment:
+ Specifically, the match_hostname function and its supporting code are
+ under the terms of the PSFLv2, taken from the Python3 standard
+ library and adapted for Python2.  The specific code is delineated in
+ the codebase.
 
 Files: lib/ansible/module_utils/openstack.py
 Copyright: 2014, Hewlett-Packard Development Company L.P.
@@ -778,7 +810,9 @@ Copyright: 2014, Maciej Delmanowski <drybjed@gmail.com>
 License: GPL-3+
 
 Files: lib/ansible/runner/connection_plugins/chroot.py
-Copyright: 2013, Maykel Moya <mmoya@speedyrails.com>
+Copyright:
+ 2013, Maykel Moya <mmoya@speedyrails.com>
+ 2015, Toshio Kuratomi <tkuratomi@ansible.com>
 License: GPL-3+
 
 Files: lib/ansible/utils/unicode.py
@@ -889,3 +923,52 @@ License: GPL
  On Debian systems, the full text of the GNU General Public
  License version 1 can be found in the file
  `/usr/share/common-licenses/GPL-1'.
+
+License: PSFLv2
+ PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
+ --------------------------------------------
+ .
+ 1. This LICENSE AGREEMENT is between the Python Software Foundation
+ ("PSF"), and the Individual or Organization ("Licensee") accessing
+ and otherwise using this software ("Python") in source or binary form
+ and its associated documentation.
+ .
+ 2. Subject to the terms and conditions of this License Agreement, PSF
+ hereby grants Licensee a nonexclusive, royalty-free, world-wide
+ license to reproduce, analyze, test, perform and/or display publicly,
+ prepare derivative works, distribute, and otherwise use Python alone
+ or in any derivative version, provided, however, that PSF's License
+ Agreement and PSF's notice of copyright, i.e., "Copyright (c) 2001,
+ 2002, 2003, 2004, 2005, 2006 Python Software Foundation; All Rights
+ Reserved" are retained in Python alone or in any derivative version
+ prepared by Licensee.
+ .
+ 3. In the event Licensee prepares a derivative work that is based on
+ or incorporates Python or any part thereof, and wants to make the
+ derivative work available to others as provided herein, then Licensee
+ hereby agrees to include in any such work a brief summary of the
+ changes made to Python.
+ .
+ 4. PSF is making Python available to Licensee on an "AS IS"
+ basis. PSF MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR
+ IMPLIED. BY WAY OF EXAMPLE, BUT NOT LIMITATION, PSF MAKES NO AND
+ DISCLAIMS ANY REPRESENTATION OR WARRANTY OF MERCHANTABILITY OR
+ FITNESS FOR ANY PARTICULAR PURPOSE OR THAT THE USE OF PYTHON WILL NOT
+ INFRINGE ANY THIRD PARTY RIGHTS.
+ .
+ 5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON
+ FOR ANY INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS A
+ RESULT OF MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON, OR ANY
+ DERIVATIVE THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
+ .
+ 6. This License Agreement will automatically terminate upon a material
+ breach of its terms and conditions.
+ .
+ 7. Nothing in this License Agreement shall be deemed to create any
+ relationship of agency, partnership, or joint venture between PSF and
+ Licensee. This License Agreement does not grant permission to use PSF
+ trademarks or trade name in a trademark sense to endorse or promote
+ products or services of Licensee, or any third party.
+ .
+ 8. By copying, installing or otherwise using Python, Licensee agrees
+ to be bound by the terms and conditions of this License Agreement.
