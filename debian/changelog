@@ -1,10 +1,11 @@
-ansible (1.9.1+dfsg-1) experimental; urgency=medium
+ansible (1.9.2+dfsg-1) unstable; urgency=medium
 
-  * New upstream version.
+  * New upstream version. (Closes: #773526)
+  * Add dependency on python-netaddr (Closes: #790234)
   * Heavy refactoring due to upstream release changes
   * New, comprehensive d/copyright.
 
- -- Harlan Lieberman-Berg <hlieberman@setec.io>  Wed, 27 May 2015 16:41:16 -0400
+ -- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>  Sat, 27 Jun 2015 23:12:55 -0400
 
 ansible (1.7.2+dfsg-2) unstable; urgency=low
 
