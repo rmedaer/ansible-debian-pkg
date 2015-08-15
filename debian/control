@@ -5,7 +5,7 @@ Maintainer: Janos Guljas <janos@debian.org>
 Uploaders: Michael Vogt <mvo@debian.org>,
  Harlan Lieberman-Berg <hlieberman@setec.io>
 Build-Depends: debhelper (>= 9), python-all, python-crypto,
- python-setuptools, python-sphinx, python-yaml, asciidoc,
+ python-setuptools, python-yaml, asciidoc,
  python-nose, python-passlib, dh-python
 Standards-Version: 3.9.6
 Homepage: http://ansible.com
@@ -18,7 +18,7 @@ Depends: ${misc:Depends}, ${python:Depends}, python-crypto, python-yaml,
  openssh-client | python-paramiko, python-jinja2, python-httplib2,
  python-netaddr
 Recommends: python-selinux
-Suggests: ansible-doc, sshpass
+Suggests: sshpass
 Description: Configuration management, deployment, and task execution system
  Ansible is a radically simple model-driven configuration management,
  multi-node deployment, and remote task execution system. Ansible works
