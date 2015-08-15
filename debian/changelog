@@ -1,4 +1,4 @@
-ansible (1.9.2+dfsg-2) UNRELEASED; urgency=medium
+ansible (1.9.2+dfsg-2) unstable; urgency=low
 
   * Fix suggestion of no-longer-built ansible-doc. (Closes: #795532)
     .
@@ -6,7 +6,7 @@ ansible (1.9.2+dfsg-2) UNRELEASED; urgency=medium
     and learning it.  They no longer ship this in released versions, thus ansible-doc
     was removed.
 
- -- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>  Sat, 15 Aug 2015 09:15:10 +0200
+ -- Harlan Lieberman-Berg <H.LiebermanBerg@gmail.com>  Sat, 15 Aug 2015 09:29:31 +0200
 
 ansible (1.9.2+dfsg-1) unstable; urgency=medium
 
