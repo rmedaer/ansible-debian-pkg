@@ -1,3 +1,9 @@
+ansible (1.9.3-1) unstable; urgency=medium
+
+  * New upstream version.
+
+ -- Harlan Lieberman-Berg <hlieberman@setec.io>  Thu, 03 Sep 2015 21:06:03 -0400
+
 ansible (1.9.2+dfsg-2) unstable; urgency=low
 
   * Fix suggestion of no-longer-built ansible-doc. (Closes: #795532)
