@@ -1,3 +1,11 @@
+ansible (2.0.0.1-1) experimental; urgency=medium
+
+  * New upstream version.
+  * Fix up d/control's spacing, ordering.
+  * Extensive update of d/copyright with cme.
+
+ -- Harlan Lieberman-Berg <hlieberman@setec.io>  Tue, 12 Jan 2016 22:56:34 -0500
+
 ansible (1.9.4-1) unstable; urgency=medium
 
   * New upstream version.
