@@ -25,7 +25,7 @@ short_description: Adds or removes users to RabbitMQ
 description:
   - Add or remove users to RabbitMQ and assign permissions
 version_added: "1.1"
-author: Chris Hoffman
+author: '"Chris Hoffman (@chrishoffman)"'
 options:
   user:
     description:
@@ -108,7 +108,7 @@ class RabbitMqUser(object):
         self.username = username
         self.password = password
         self.node = node
-        if tags is None:
+        if not tags:
             self.tags = list()
         else:
             self.tags = tags.split(',')
