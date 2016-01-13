@@ -1,22 +1,33 @@
 Source: ansible
-Section: admin
-Priority: optional
 Maintainer: Janos Guljas <janos@debian.org>
 Uploaders: Michael Vogt <mvo@debian.org>,
- Harlan Lieberman-Berg <hlieberman@setec.io>
-Build-Depends: debhelper (>= 9), python-all, python-crypto,
- python-setuptools, python-yaml, asciidoc,
- python-nose, python-passlib, dh-python
+           Harlan Lieberman-Berg <hlieberman@setec.io>
+Section: admin
+Priority: optional
+Build-Depends: debhelper (>= 9),
+               python-all,
+               python-crypto,
+               python-setuptools,
+               python-yaml,
+               asciidoc,
+               python-nose,
+               python-passlib,
+               dh-python
 Standards-Version: 3.9.6
-Homepage: http://ansible.com
+Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/ansible.git
 Vcs-Git: git://anonscm.debian.org/collab-maint/ansible.git
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/ansible.git
+Homepage: http://ansible.com
 
 Package: ansible
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends}, python-crypto, python-yaml,
- openssh-client | python-paramiko, python-jinja2, python-httplib2,
- python-netaddr
+Depends: ${misc:Depends},
+         ${python:Depends},
+         python-crypto,
+         python-yaml,
+         openssh-client | python-paramiko,
+         python-jinja2,
+         python-httplib2,
+         python-netaddr
 Recommends: python-selinux
 Suggests: sshpass
 Description: Configuration management, deployment, and task execution system
@@ -28,7 +39,10 @@ Description: Configuration management, deployment, and task execution system
 
 Package: ansible-fireball
 Architecture: all
-Depends: ${misc:Depends}, ansible, python-keyczar, python-zmq
+Depends: ${misc:Depends},
+         ansible,
+         python-keyczar,
+         python-zmq
 Description: Ansible fireball transport support
  Ansible is a radically simple model-driven configuration management,
  multi-node deployment, and remote task execution system. Ansible works
@@ -45,7 +59,9 @@ Description: Ansible fireball transport support
 
 Package: ansible-node-fireball
 Architecture: all
-Depends: ${misc:Depends}, python-keyczar, python-zmq
+Depends: ${misc:Depends},
+         python-keyczar,
+         python-zmq
 Description: Ansible fireball transport support for nodes
  Ansible is a radically simple model-driven configuration management,
  multi-node deployment, and remote task execution system. Ansible works
