@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: ansible-doc
 .\"    Author: :doctype:manpage
-.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
-.\"      Date: 03/10/2015
+.\" Generator: DocBook XSL Stylesheets v1.76.1 <http://docbook.sf.net/>
+.\"      Date: 01/12/2016
 .\"    Manual: System administration commands
-.\"    Source: Ansible 1.9.0
+.\"    Source: Ansible 2.0.0.1
 .\"  Language: English
 .\"
-.TH "ANSIBLE\-DOC" "1" "03/10/2015" "Ansible 1\&.9\&.0" "System administration commands"
+.TH "ANSIBLE\-DOC" "1" "01/12/2016" "Ansible 2\&.0\&.0\&.1" "System administration commands"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -37,9 +37,12 @@ ansible\-doc [\-M module_path] [\-l] [\-s] [module\&...]
 \fBansible\-doc\fR displays information on modules installed in Ansible libraries\&. It displays a terse listing of modules and their short descriptions, provides a printout of their DOCUMENTATION strings, and it can create a short "snippet" which can be pasted into a playbook\&.
 .SH "OPTIONS"
 .PP
-\fB\-M\fR \fIdirectory\fR, \fB\-\-module\-path=\fR\fIdirectory\fR
+\fB\-M\fR \fIDIRECTORY\fR, \fB\-\-module\-path=\fR\fIDIRECTORY\fR
 .RS 4
-Add an additional directory to the default path for finding module libraries\&.
+the
+\fIDIRECTORY\fR
+search path to load modules from\&. The default is
+\fI/usr/share/ansible\fR\&. This can also be set with the ANSIBLE_LIBRARY environment variable\&.
 .RE
 .PP
 \fB\-s\fR, \fB\-\-snippet=\fR
@@ -51,6 +54,16 @@ Produce a snippet which can be copied into a playbook for modification, like a k
 .RS 4
 Produce a terse listing of modules and a short description of each\&.
 .RE
+.SH "ENVIRONMENT"
+.sp
+ANSIBLE_LIBRARY \(em Override the default ansible module library path
+.SH "FILES"
+.sp
+/usr/share/ansible/ \(em Default module library
+.sp
+/etc/ansible/ansible\&.cfg \(em Config file, used if present
+.sp
+~/\&.ansible\&.cfg \(em User config file, overrides the default config if present
 .SH "AUTHOR"
 .sp
 ansible\-doc was originally written by Jan\-Piet Mens\&. See the AUTHORS file for a complete list of contributors\&.
@@ -61,7 +74,7 @@ Copyright \(co 2012, Jan\-Piet Mens
 Ansible is released under the terms of the GPLv3 License\&.
 .SH "SEE ALSO"
 .sp
-\fBansible\-playbook\fR(1), \fBansible\fR(1), \fBansible\-pull\fR(1)
+\fBansible\-playbook\fR(1), \fBansible\fR(1), \fBansible\-pull\fR(1), \fBansible\-vault\fR(1), \fBansible\-galaxy\fR(1)
 .sp
 Extensive documentation is available in the documentation site: http://docs\&.ansible\&.com\&. IRC and mailing list info can be found in file CONTRIBUTING\&.md, available in: https://github\&.com/ansible/ansible
 .SH "AUTHOR"
