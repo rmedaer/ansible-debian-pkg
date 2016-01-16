@@ -1,3 +1,9 @@
+ansible (2.0.0.2-1) experimental; urgency=medium
+
+  * New upstream version.
+
+ -- Harlan Lieberman-Berg <hlieberman@setec.io>  Fri, 15 Jan 2016 20:15:26 -0500
+
 ansible (2.0.0.1-1) experimental; urgency=medium
 
   * New upstream version.
