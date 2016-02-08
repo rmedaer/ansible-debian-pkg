@@ -15,7 +15,7 @@ Build-Depends: debhelper (>= 9),
                dh-python
 Standards-Version: 3.9.6
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/ansible.git
-Vcs-Git: git://anonscm.debian.org/collab-maint/ansible.git
+Vcs-Git: https://anonscm.debian.org/collab-maint/ansible.git
 Homepage: http://ansible.com
 
 Package: ansible
