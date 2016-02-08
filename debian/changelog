@@ -1,3 +1,10 @@
+ansible (2.0.0.2-2) unstable; urgency=medium
+
+  * Migrate to unstable.
+  * Switch Vcs-git to https.
+
+ -- Harlan Lieberman-Berg <hlieberman@setec.io>  Mon, 08 Feb 2016 07:15:41 -0500
+
 ansible (2.0.0.2-1) experimental; urgency=medium
 
   * New upstream version.
