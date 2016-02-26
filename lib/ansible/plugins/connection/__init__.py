@@ -60,6 +60,7 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
     # as discovered by the specified file extension.  An empty string as the
     # language means any language.
     module_implementation_preferences = ('',)
+    allow_executable = True
 
     def __init__(self, play_context, new_stdin, *args, **kwargs):
         # All these hasattrs allow subclasses to override these parameters
@@ -83,7 +84,12 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
         elif hasattr(self, '_shell_type'):
             shell_type = getattr(self, '_shell_type')
         else:
-            shell_type = os.path.basename(C.DEFAULT_EXECUTABLE)
+            shell_type = 'sh'
+            shell_filename = os.path.basename(C.DEFAULT_EXECUTABLE)
+            for shell in shell_loader.all():
+                if shell_filename in shell.COMPATIBLE_SHELLS:
+                    shell_type = shell.SHELL_FAMILY
+                    break
 
         self._shell = shell_loader.get(shell_type)
         if not self._shell:
@@ -206,7 +212,10 @@ class ConnectionBase(with_metaclass(ABCMeta, object)):
         pass
 
     def check_become_success(self, output):
-        return self._play_context.success_key == output.rstrip()
+        for line in output.splitlines(True):
+            if self._play_context.success_key == line.rstrip():
+                return True
+        return False
 
     def check_password_prompt(self, output):
         if self._play_context.prompt is None:

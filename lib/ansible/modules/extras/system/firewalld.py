@@ -56,7 +56,8 @@ options:
   permanent:
     description:
       - "Should this configuration be in the running firewalld configuration or persist across reboots."
-    required: true
+    required: false
+    default: null
   immediate:
     description:
       - "Should this configuration be applied immediately, if set as permanent"
@@ -97,7 +98,10 @@ try:
 
     from firewall.client import FirewallClient
     fw = FirewallClient()
-    HAS_FIREWALLD = True
+    if not fw.connected:
+        HAS_FIREWALLD = False
+    else:
+        HAS_FIREWALLD = True
 except ImportError:
     HAS_FIREWALLD = False
 

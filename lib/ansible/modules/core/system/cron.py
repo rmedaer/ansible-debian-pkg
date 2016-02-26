@@ -45,7 +45,7 @@ version_added: "0.9"
 options:
   name:
     description:
-      - Description of a crontab entry.
+      - Description of a crontab entry. Required if state=absent
     default: null
     required: false
   user:
@@ -383,7 +383,7 @@ class CronTab(object):
                 return "chown %s %s ; su '%s' -c '%s %s'" % (pipes.quote(self.user), pipes.quote(path), pipes.quote(self.user), CRONCMD, pipes.quote(path))
             else:
                 user = '-u %s' % pipes.quote(self.user)
-        return "%s %s %s" % (CRONCMD , user, pipes.quote(path))
+        return "%s %s %s" % (CRONCMD , pipes.quote(path), user)
 
 
 

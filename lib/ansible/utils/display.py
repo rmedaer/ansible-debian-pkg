@@ -48,18 +48,17 @@ except NameError:
 # These are module level as we currently fork and serialize the whole process and locks in the objects don't play well with that
 debug_lock = Lock()
 
+logger = None
 #TODO: make this a logging callback instead
 if C.DEFAULT_LOG_PATH:
     path = C.DEFAULT_LOG_PATH
-    if (os.path.exists(path) and not os.access(path, os.W_OK)) or not os.access(os.path.dirname(path), os.W_OK):
-        print("[WARNING]: log file at %s is not writeable, aborting\n" % path, file=sys.stderr)
-
-    logging.basicConfig(filename=path, level=logging.DEBUG, format='%(asctime)s %(name)s %(message)s')
-    mypid = str(os.getpid())
-    user = getpass.getuser()
-    logger = logging.getLogger("p=%s u=%s | " % (mypid, user))
-else:
-    logger = None
+    if (os.path.exists(path) and os.access(path, os.W_OK)) or os.access(os.path.dirname(path), os.W_OK):
+        logging.basicConfig(filename=path, level=logging.DEBUG, format='%(asctime)s %(name)s %(message)s')
+        mypid = str(os.getpid())
+        user = getpass.getuser()
+        logger = logging.getLogger("p=%s u=%s | " % (mypid, user))
+    else:
+        print("[WARNING]: log file at %s is not writeable and we cannot create it, aborting\n" % path, file=sys.stderr)
 
 
 class Display:
@@ -112,6 +111,7 @@ class Display:
 
         # FIXME: this needs to be implemented
         #msg = utils.sanitize_output(msg)
+        nocolor = msg
         if color:
             msg = stringc(msg, color)
 
@@ -136,7 +136,7 @@ class Display:
                 sys.stderr.flush()
 
         if logger and not screen_only:
-            msg2 = msg.lstrip(u'\n')
+            msg2 = nocolor.lstrip(u'\n')
 
             msg2 = to_bytes(msg2)
             if sys.version_info >= (3,):
@@ -256,7 +256,7 @@ class Display:
             wrapped = textwrap.wrap(new_msg, self.columns)
             new_msg = u"\n".join(wrapped) + u"\n"
         else:
-            new_msg = msg
+            new_msg = u"ERROR! " + msg
         if new_msg not in self._errors:
             self.display(new_msg, color='red', stderr=True)
             self._errors[new_msg] = 1
@@ -274,7 +274,6 @@ class Display:
         else:
             return input(prompt_string)
 
-    @classmethod
     def do_var_prompt(self, varname, private=True, prompt=None, encrypt=None, confirm=False, salt_size=None, salt=None, default=None):
 
         result = None
@@ -295,18 +294,20 @@ class Display:
                     second = do_prompt("confirm " + msg, private)
                     if result == second:
                         break
-                    display.display("***** VALUES ENTERED DO NOT MATCH ****")
+                    self.display("***** VALUES ENTERED DO NOT MATCH ****")
             else:
                 result = do_prompt(msg, private)
         else:
             result = None
-            display.warning("Not prompting as we are not in interactive mode")
+            self.warning("Not prompting as we are not in interactive mode")
 
         # if result is false and default is not None
         if not result and default is not None:
             result = default
 
         if encrypt:
+            # Circular import because encrypt needs a display class
+            from ansible.utils.encrypt import do_encrypt
             result = do_encrypt(result, encrypt, salt_size, salt)
 
         # handle utf-8 chars

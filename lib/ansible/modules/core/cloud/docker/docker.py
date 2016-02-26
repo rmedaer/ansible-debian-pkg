@@ -523,6 +523,8 @@ def get_split_image_tag(image):
         resource, tag = resource.split(':', 1)
         if registry:
             resource = '/'.join((registry, resource))
+        if tag == "":
+            tag = "latest"
     else:
         tag = "latest"
         resource = image
@@ -1032,6 +1034,7 @@ class DockerManager(object):
 
         running = self.get_running_containers()
         current = self.get_inspect_containers(running)
+        defaults = self.client.info()
 
         #Get API version
         api_version = self.client.version()['ApiVersion']
@@ -1303,7 +1306,7 @@ class DockerManager(object):
             # LOG_DRIVER
 
             if self.ensure_capability('log_driver', False):
-                expected_log_driver = self.module.params.get('log_driver') or 'json-file'
+                expected_log_driver = self.module.params.get('log_driver') or defaults['LoggingDriver']
                 actual_log_driver = container['HostConfig']['LogConfig']['Type']
                 if actual_log_driver != expected_log_driver:
                     self.reload_reasons.append('log_driver ({0} => {1})'.format(actual_log_driver, expected_log_driver))
