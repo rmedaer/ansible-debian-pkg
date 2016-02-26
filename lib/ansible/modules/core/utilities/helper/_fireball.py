@@ -1,4 +1,7 @@
-# (c) 2012-2014, Michael DeHaan <michael.dehaan@gmail.com>
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+# (c) 2012, Michael DeHaan <michael.dehaan@gmail.com>
 #
 # This file is part of Ansible
 #
@@ -15,9 +18,22 @@
 # You should have received a copy of the GNU General Public License
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
-# Make coding more python3-ish
-from __future__ import (absolute_import, division, print_function)
-__metaclass__ = type
+DOCUMENTATION = '''
+---
+module: fireball
+short_description: Enable fireball mode on remote node
+version_added: "0.9"
+deprecated: "in favor of SSH with ControlPersist"
+description:
+    - Modern SSH clients support ControlPersist which is just as fast as
+      fireball was.  Please enable that in ansible.cfg as a replacement
+      for fireball.
+    - Removed in ansible 2.0.
+author:
+    - "Ansible Core Team"
+    - "Michael DeHaan"
+'''
 
-__version__ = '2.0.1.0'
-__author__  = 'Ansible, Inc.'
+EXAMPLES = '''
+'''
+

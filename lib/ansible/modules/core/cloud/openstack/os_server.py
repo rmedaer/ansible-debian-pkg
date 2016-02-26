@@ -538,7 +538,7 @@ def main():
         network                         = dict(default=None),
         nics                            = dict(default=[], type='list'),
         meta                            = dict(default=None),
-        userdata                        = dict(default=None),
+        userdata                        = dict(default=None, aliases=['user_data']),
         config_drive                    = dict(default=False, type='bool'),
         auto_ip                         = dict(default=True, type='bool', aliases=['auto_floating_ip', 'public_ip']),
         floating_ips                    = dict(default=None),
@@ -599,7 +599,7 @@ def main():
             _get_server_state(module, cloud)
             _delete_server(module, cloud)
     except shade.OpenStackCloudException as e:
-        module.fail_json(msg=e.message, extra_data=e.extra_data)
+        module.fail_json(msg=str(e), extra_data=e.extra_data)
 
 # this is magic, see lib/ansible/module_common.py
 from ansible.module_utils.basic import *

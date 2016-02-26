@@ -24,6 +24,7 @@ import json
 import os
 import pipes
 import random
+import re
 import stat
 import tempfile
 import time
@@ -356,6 +357,14 @@ class ActionBase(with_metaclass(ABCMeta, object)):
 
         return data[idx:]
 
+    def _strip_success_message(self, data):
+        '''
+        Removes the BECOME-SUCCESS message from the data.
+        '''
+        if data.strip().startswith('BECOME-SUCCESS-'):
+            data = re.sub(r'^((\r)?\n)?BECOME-SUCCESS.*(\r)?\n', '', data)
+        return data
+
     def _execute_module(self, module_name=None, module_args=None, tmp=None, task_vars=None, persist_files=False, delete_remote_tmp=True):
         '''
         Transfer and run a module along with its arguments.
@@ -386,7 +395,7 @@ class ActionBase(with_metaclass(ABCMeta, object)):
 
         (module_style, shebang, module_data) = self._configure_module(module_name=module_name, module_args=module_args, task_vars=task_vars)
         if not shebang:
-            raise AnsibleError("module is missing interpreter line")
+            raise AnsibleError("module (%s) is missing interpreter line" % module_name)
 
         # a remote tmp path may be necessary and not already created
         remote_module_path = None
@@ -420,11 +429,13 @@ class ActionBase(with_metaclass(ABCMeta, object)):
         if tmp and "tmp" in tmp and self._play_context.become and self._play_context.become_user != 'root':
             # deal with possible umask issues once sudo'ed to other user
             self._remote_chmod('a+r', remote_module_path)
+            if args_file_path is not None:
+                self._remote_chmod('a+r', args_file_path)
 
         cmd = ""
         in_data = None
 
-        if self._connection.has_pipelining and self._play_context.pipelining and not C.DEFAULT_KEEP_REMOTE_FILES:
+        if self._connection.has_pipelining and self._play_context.pipelining and not C.DEFAULT_KEEP_REMOTE_FILES and module_style == 'new':
             in_data = module_data
         else:
             if remote_module_path:
@@ -475,8 +486,7 @@ class ActionBase(with_metaclass(ABCMeta, object)):
         display.debug("done with _execute_module (%s, %s)" % (module_name, module_args))
         return data
 
-    def _low_level_execute_command(self, cmd, sudoable=True, in_data=None,
-            executable=None, encoding_errors='replace'):
+    def _low_level_execute_command(self, cmd, sudoable=True, in_data=None, executable=C.DEFAULT_EXECUTABLE, encoding_errors='replace'):
         '''
         This is the function which executes the low level shell command, which
         may be commands to create/remove directories for temporary files, or to
@@ -491,8 +501,8 @@ class ActionBase(with_metaclass(ABCMeta, object)):
             replacement strategy (python3 could use surrogateescape)
         '''
 
-        if executable is not None:
-            cmd = executable + ' -c ' + cmd
+        if executable is not None and self._connection.allow_executable:
+            cmd = executable + ' -c ' + pipes.quote(cmd)
 
         display.debug("_low_level_execute_command(): starting")
         if not cmd:
@@ -528,8 +538,10 @@ class ActionBase(with_metaclass(ABCMeta, object)):
         if rc is None:
             rc = 0
 
-        display.debug("_low_level_execute_command() done: rc=%d, stdout=%s, stderr=%s" % (rc, stdout, stderr))
+        # be sure to remove the BECOME-SUCCESS message now
+        out = self._strip_success_message(out)
 
+        display.debug("_low_level_execute_command() done: rc=%d, stdout=%s, stderr=%s" % (rc, stdout, stderr))
         return dict(rc=rc, stdout=out, stdout_lines=out.splitlines(), stderr=err)
 
     def _get_first_available_file(self, faf, of=None, searchdir='files'):
@@ -582,23 +594,30 @@ class ActionBase(with_metaclass(ABCMeta, object)):
                     diff['before'] = dest_contents
 
             if source_file:
-                display.debug("Reading local copy of the file %s" % source)
-                try:
-                    src = open(source)
-                    src_contents = src.read(8192)
-                    st = os.stat(source)
-                except Exception as e:
-                    raise AnsibleError("Unexpected error while reading source (%s) for diff: %s " % (source, str(e)))
-                if "\x00" in src_contents:
-                    diff['src_binary'] = 1
-                elif st[stat.ST_SIZE] > C.MAX_FILE_SIZE_FOR_DIFF:
+                st = os.stat(source)
+                if st[stat.ST_SIZE] > C.MAX_FILE_SIZE_FOR_DIFF:
                     diff['src_larger'] = C.MAX_FILE_SIZE_FOR_DIFF
                 else:
-                    diff['after_header'] = source
-                    diff['after'] = src_contents
+                    display.debug("Reading local copy of the file %s" % source)
+                    try:
+                        src = open(source)
+                        src_contents = src.read()
+                    except Exception as e:
+                        raise AnsibleError("Unexpected error while reading source (%s) for diff: %s " % (source, str(e)))
+                    if "\x00" in src_contents:
+                        diff['src_binary'] = 1
+                    else:
+                        diff['after_header'] = source
+                        diff['after'] = src_contents
             else:
                 display.debug("source of file passed in")
                 diff['after_header'] = 'dynamically generated'
                 diff['after'] = source
+
+        if self._play_context.no_log:
+            if 'before' in diff:
+                diff["before"] = ""
+            if 'after' in diff:
+                diff["after"] = " [[ Diff output has been hidden because 'no_log: true' was specified for this result ]]"
 
         return diff

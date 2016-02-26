@@ -119,6 +119,7 @@ class Facts(object):
                     ('/etc/gentoo-release', 'Gentoo'),
                     ('/etc/os-release', 'Debian'),
                     ('/etc/lsb-release', 'Mandriva'),
+                    ('/etc/altlinux-release', 'Altlinux'),
                     ('/etc/os-release', 'NA'),
                 )
     SELINUX_MODE_DICT = { 1: 'enforcing', 0: 'permissive', -1: 'disabled' }
@@ -270,7 +271,7 @@ class Facts(object):
             OracleLinux = 'RedHat', OVS = 'RedHat', OEL = 'RedHat', Amazon = 'RedHat',
             XenServer = 'RedHat', Ubuntu = 'Debian', Debian = 'Debian', Raspbian = 'Debian', Slackware = 'Slackware', SLES = 'Suse',
             SLED = 'Suse', openSUSE = 'Suse', SuSE = 'Suse', SLES_SAP = 'Suse', Gentoo = 'Gentoo', Funtoo = 'Gentoo',
-            Archlinux = 'Archlinux', Manjaro = 'Archlinux', Mandriva = 'Mandrake', Mandrake = 'Mandrake',
+            Archlinux = 'Archlinux', Manjaro = 'Archlinux', Mandriva = 'Mandrake', Mandrake = 'Mandrake', Altlinux = 'Altlinux',
             Solaris = 'Solaris', Nexenta = 'Solaris', OmniOS = 'Solaris', OpenIndiana = 'Solaris',
             SmartOS = 'Solaris', AIX = 'AIX', Alpine = 'Alpine', MacOSX = 'Darwin',
             FreeBSD = 'FreeBSD', HPUX = 'HP-UX'
@@ -323,7 +324,7 @@ class Facts(object):
             for (path, name) in Facts.OSDIST_LIST:
                 if os.path.exists(path):
                     if os.path.getsize(path) > 0:
-                        if self.facts['distribution'] in ('Fedora', ):
+                        if self.facts['distribution'] in ('Fedora', 'Altlinux', ):
                             # Once we determine the value is one of these distros
                             # we trust the values are always correct
                             break
@@ -352,6 +353,13 @@ class Facts(object):
                         elif name == 'RedHat':
                             data = get_file_content(path)
                             if 'Red Hat' in data:
+                                self.facts['distribution'] = name
+                            else:
+                                self.facts['distribution'] = data.split()[0]
+                            break
+                        elif name == 'Altlinux':
+                            data = get_file_content(path)
+                            if 'ALT Linux' in data:
                                 self.facts['distribution'] = name
                             else:
                                 self.facts['distribution'] = data.split()[0]
@@ -430,9 +438,9 @@ class Facts(object):
                                             release = re.search("^PRETTY_NAME=[^(]+ \(?([^)]+?)\)", line)
                                             if release:
                                                 self.facts['distribution_release'] = release.groups()[0]
-                                        elif 'enterprise' in data.lower():
+                                        elif 'enterprise' in data.lower() and 'VERSION_ID' in line:
                                              release = re.search('^VERSION_ID="?[0-9]+\.?([0-9]*)"?', line) # SLES doesn't got funny release names
-                                             if release:
+                                             if release.group(1):
                                                  release = release.group(1)
                                              else:
                                                  release = "0" # no minor number, so it is the first release
@@ -528,6 +536,8 @@ class Facts(object):
                 keydir = '/etc/ssh'
             else:
                 keydir = '/etc'
+        if self.facts['distribution'] == 'Altlinux':
+            keydir = '/etc/openssh'
         else:
             keydir = '/etc/ssh'
 
@@ -554,6 +564,8 @@ class Facts(object):
         proc_1 = get_file_content('/proc/1/comm')
         if proc_1 is None:
             rc, proc_1, err = module.run_command("ps -p 1 -o comm|tail -n 1", use_unsafe_shell=True)
+        else:
+            proc_1 = os.path.basename(proc_1)
 
         if proc_1 in ['init', '/sbin/init', 'bash']:
             # many systems return init, so this cannot be trusted, bash is from docker
@@ -561,7 +573,7 @@ class Facts(object):
 
         # if not init/None it should be an identifiable or custom init, so we are done!
         if proc_1 is not None:
-            self.facts['service_mgr'] = proc_1
+            self.facts['service_mgr'] = proc_1.strip()
 
         # start with the easy ones
         elif  self.facts['distribution'] == 'MacOSX':
@@ -2974,14 +2986,19 @@ def get_file_content(path, default=None, strip=True):
     data = default
     if os.path.exists(path) and os.access(path, os.R_OK):
         try:
-            datafile = open(path)
-            data = datafile.read()
-            if strip:
-                data = data.strip()
-            if len(data) == 0:
-                data = default
-        finally:
-            datafile.close()
+            try:
+                datafile = open(path)
+                data = datafile.read()
+                if strip:
+                    data = data.strip()
+                if len(data) == 0:
+                    data = default
+            finally:
+                datafile.close()
+        except:
+            # ignore errors as some jails/containers might have readable permissions but not allow reads to proc
+            # done in 2 blocks for 2.4 compat
+            pass
     return data
 
 def get_file_lines(path):

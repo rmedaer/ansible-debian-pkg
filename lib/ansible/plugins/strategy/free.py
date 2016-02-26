@@ -56,7 +56,7 @@ class StrategyModule(StrategyBase):
         work_to_do = True
         while work_to_do and not self._tqm._terminated:
 
-            hosts_left = [host for host in self._inventory.get_hosts(iterator._play.hosts) if host.name not in self._tqm._unreachable_hosts]
+            hosts_left = [host for host in self._inventory.get_hosts(iterator._play.hosts) if host.name not in self._tqm._unreachable_hosts and not iterator.is_failed(host)]
             if len(hosts_left) == 0:
                 self._tqm.send_callback('v2_playbook_on_no_hosts_remaining')
                 result = False
@@ -78,7 +78,7 @@ class StrategyModule(StrategyBase):
                 (state, task) = iterator.get_next_task_for_host(host, peek=True)
                 display.debug("free host state: %s" % state)
                 display.debug("free host task: %s" % task)
-                if host_name not in self._tqm._failed_hosts and host_name not in self._tqm._unreachable_hosts and task:
+                if not iterator.is_failed(host) and host_name not in self._tqm._unreachable_hosts and task:
 
                     # set the flag so the outer loop knows we've still found
                     # some work which needs to be done
@@ -122,6 +122,8 @@ class StrategyModule(StrategyBase):
                         else:
                             # handle step if needed, skip meta actions as they are used internally
                             if not self._step or self._take_step(task, host_name):
+                                if task.any_errors_fatal:
+                                    display.warning("Using any_errors_fatal with the free strategy is not supported, as tasks are executed independently on each host")
                                 self._tqm.send_callback('v2_playbook_on_task_start', task, is_conditional=False)
                                 self._queue_task(host, task, task_vars, play_context)
 
@@ -135,7 +137,7 @@ class StrategyModule(StrategyBase):
                 if last_host == starting_host:
                     break
 
-            results = self._process_pending_results(iterator)
+            results = self._wait_on_pending_results(iterator)
             host_results.extend(results)
 
             try:
@@ -176,13 +178,7 @@ class StrategyModule(StrategyBase):
                 display.debug("done adding collected blocks to iterator")
 
             # pause briefly so we don't spin lock
-            time.sleep(0.05)
-
-        try:
-            results = self._wait_on_pending_results(iterator)
-            host_results.extend(results)
-        except Exception as e:
-            pass
+            time.sleep(0.001)
 
         # run the base class run() method, which executes the cleanup function
         # and runs any outstanding handlers which have been triggered

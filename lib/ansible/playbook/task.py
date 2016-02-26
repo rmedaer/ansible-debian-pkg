@@ -216,14 +216,6 @@ class Task(Base, Conditional, Taggable, Become):
 
         return super(Task, self).preprocess_data(new_ds)
 
-    def _load_any_errors_fatal(self, attr, value):
-        '''
-        Exists only to show a deprecation warning, as this attribute is not valid
-        at the task level.
-        '''
-        display.deprecated("Setting any_errors_fatal on a task is no longer supported. This should be set at the play level only")
-        return None
-
     def post_validate(self, templar):
         '''
         Override of base class post_validate, to also do final validation on
@@ -252,11 +244,21 @@ class Task(Base, Conditional, Taggable, Become):
         if value is None:
             return dict()
 
-        for env_item in value:
-            if isinstance(env_item, (string_types, AnsibleUnicode)) and env_item in templar._available_variables.keys():
-                display.deprecated("Using bare variables for environment is deprecated."
-                        " Update your playbooks so that the environment value uses the full variable syntax ('{{foo}}')")
-                break
+        elif isinstance(value, list):
+            if  len(value) == 1:
+                return templar.template(value[0], convert_bare=True)
+            else:
+                env = []
+                for env_item in value:
+                    if isinstance(env_item, (string_types, AnsibleUnicode)) and env_item in templar._available_variables.keys():
+                        env[env_item] =  templar.template(env_item, convert_bare=True)
+        elif isinstance(value, dict):
+            env = dict()
+            for env_item in value:
+                if isinstance(env_item, (string_types, AnsibleUnicode)) and env_item in templar._available_variables.keys():
+                    env[env_item] =  templar.template(value[env_item], convert_bare=True)
+
+        # at this point it should be a simple string
         return templar.template(value, convert_bare=True)
 
     def _post_validate_changed_when(self, attr, value, templar):
@@ -422,3 +424,10 @@ class Task(Base, Conditional, Taggable, Become):
         if parent_environment is not None:
             environment = self._extend_value(environment, parent_environment)
         return environment
+
+    def _get_attr_any_errors_fatal(self):
+        '''
+        Override for the 'tags' getattr fetcher, used from Base.
+        '''
+        return self._get_parent_attribute('any_errors_fatal')
+

@@ -84,10 +84,9 @@ options:
     version_added: "1.6"
   mode:
     description:
-      - Switches the module behaviour between put (upload), get (download), geturl (return download url (Ansible 1.3+), getstr (download object as string (1.3+)), list (list keys (2.0+)), create (bucket), delete (bucket), and delobj (delete object).
+      - Switches the module behaviour between put (upload), get (download), geturl (return download url, Ansible 1.3+), getstr (download object as string (1.3+)), list (list keys, Ansible 2.0+), create (bucket), delete (bucket), and delobj (delete object, Ansible 2.0+).
     required: true
-    default: null
-    aliases: []
+    choices: ['get', 'put', 'delete', 'create', 'geturl', 'getstr', 'delobj', 'list']
   object:
     description:
       - Keyname of the object inside the bucket. Can be used to create "virtual directories", see examples.
@@ -114,7 +113,7 @@ options:
     version_added: "2.0"
   overwrite:
     description:
-      - Force overwrite either locally on the filesystem or remotely with the object/key. Used with PUT and GET operations.
+      - Force overwrite either locally on the filesystem or remotely with the object/key. Used with PUT and GET operations. Boolean or one of [Always, Never, Different], new in 2.0
     required: false
     default: true
     version_added: "1.2"
@@ -180,7 +179,7 @@ EXAMPLES = '''
 # Delete a bucket and all contents
 - s3: bucket=mybucket mode=delete
 
-# GET an object but dont download if the file checksums match
+# GET an object but dont download if the file checksums match. New in 2.0
 - s3: bucket=mybucket object=/my/desired/key.txt dest=/usr/local/myfile.txt mode=get overwrite=different
 
 # Delete an object from a bucket

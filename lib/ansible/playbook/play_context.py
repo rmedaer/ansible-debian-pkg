@@ -366,12 +366,17 @@ class PlayContext(Base):
         else:
             delegated_vars = dict()
 
+        attrs_considered = []
         for (attr, variable_names) in iteritems(MAGIC_VARIABLE_MAPPING):
             for variable_name in variable_names:
+                if attr in attrs_considered:
+                    continue
                 if isinstance(delegated_vars, dict) and variable_name in delegated_vars:
                     setattr(new_info, attr, delegated_vars[variable_name])
+                    attrs_considered.append(attr)
                 elif variable_name in variables:
                     setattr(new_info, attr, variables[variable_name])
+                    attrs_considered.append(attr)
 
         # make sure we get port defaults if needed
         if new_info.port is None and C.DEFAULT_REMOTE_PORT is not None:
@@ -446,8 +451,10 @@ class PlayContext(Base):
 
             if self.become_method == 'sudo':
                 # If we have a password, we run sudo with a randomly-generated
-                # prompt set using -p. Otherwise we run it with -n, which makes
+                # prompt set using -p. Otherwise we run it with default -n, which makes
                 # it fail if it would have prompted for a password.
+                # Cannot rely on -n as it can be removed from defaults, which should be
+                # done for older versions of sudo that do not support the option.
                 #
                 # Passing a quoted compound command to sudo (or sudo -s)
                 # directly doesn't work, so we shellquote it with pipes.quote()
@@ -463,12 +470,14 @@ class PlayContext(Base):
 
             elif self.become_method == 'su':
 
+                # passing code ref to examine prompt as simple string comparisson isn't good enough with su
                 def detect_su_prompt(data):
                     SU_PROMPT_LOCALIZATIONS_RE = re.compile("|".join(['(\w+\'s )?' + x + ' ?: ?' for x in SU_PROMPT_LOCALIZATIONS]), flags=re.IGNORECASE)
                     return bool(SU_PROMPT_LOCALIZATIONS_RE.match(data))
-
                 prompt = detect_su_prompt
-                becomecmd = '%s %s %s -c "%s -c %s"' % (exe, flags, self.become_user, executable, success_cmd)
+
+                su_success_cmd =  '%s -c %s' % (executable, success_cmd) # this is here cause su too succeptible to overquoting
+                becomecmd = '%s %s %s -c %s' % (exe, flags, self.become_user, su_success_cmd) #works with sh
 
             elif self.become_method == 'pbrun':
 
