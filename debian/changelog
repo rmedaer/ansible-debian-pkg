@@ -1,3 +1,11 @@
+ansible (2.0.1.0-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Fix Vcs-git URI.
+  * Bump standards version.
+
+ -- Harlan Lieberman-Berg <hlieberman@setec.io>  Thu, 25 Feb 2016 23:03:33 -0500
+
 ansible (2.0.0.2-2) unstable; urgency=medium
 
   * Migrate to unstable.
