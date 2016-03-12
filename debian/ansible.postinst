@@ -1,0 +1,70 @@
+#!/bin/sh
+# postinst script for Ansible
+#
+# It generates the default Ansible's configuration file from debconf
+# configuration. Please see template file and Ansible doc for more
+# informations.
+#
+
+set -e
+
+# summary of how this script can be called:
+#        * <postinst> `configure' <most-recently-configured-version>
+#        * <old-postinst> `abort-upgrade' <new version>
+#        * <conflictor's-postinst> `abort-remove' `in-favour' <package>
+#          <new-version>
+#        * <postinst> `abort-remove'
+#        * <deconfigured's-postinst> `abort-deconfigure' `in-favour'
+#          <failed-install-package> <version> `removing'
+#          <conflicting-package> <version>
+
+. /usr/share/debconf/confmodule
+
+CONFIG_TEMPLATE="/usr/share/doc/ansible/examples/ansible.template.cfg"
+CONFIG_ETC="/etc/ansible/ansible.cfg"
+
+case "$1" in
+    configure)
+        db_get "ansible/force_overwrite"
+        if [ ! -f "/etc/ansible/ansible.cfg" ] || [ "$RET" = "true" ]; then
+            db_set "ansible/force_overwrite" "false"
+            db_get "ansible/forks"
+            export FORKS=$RET
+
+            db_get "ansible/poll_interval"
+            export POLL_INTERVAL=$RET
+
+            db_get "ansible/transport"
+            export TRANSPORT=$RET
+
+            db_get "ansible/ssh_remote_port"
+            export SSH_REMOTE_PORT=$RET
+
+            db_get "ansible/ssh_timeout"
+            export SSH_TIMEOUT=$RET
+
+            db_get "ansible/gathering"
+            export GATHERING=$RET
+
+            db_get "ansible/callback"
+            export CALLBACK=$RET
+
+            zcat -f ${CONFIG_TEMPLATE} | envsubst > ${CONFIG_ETC}
+        fi
+
+
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+
+#DEBHELPER#
+
+exit 0

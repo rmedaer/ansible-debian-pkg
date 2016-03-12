@@ -1,0 +1,42 @@
+Template: ansible/forks
+Type: string
+Default: 5
+Description: Number of parallel processes to spawn when communicating with remote hosts.
+
+Template: ansible/poll_interval
+Type: string
+Default: 15
+Description: For asynchronous tasks, this is how often to check back on the status of those tasks when an explicit poll interval is not supplied.
+
+Template: ansible/transport
+Type: select
+Choices: accelerate, chroot, docker, jail, libvirt_lxc, local, paramiko, smart, ssh, winrm, zone
+Default: smart
+Description: Default transport to use.
+
+Template: ansible/ssh_remote_port
+Type: string
+Default: 22
+Description: Default SSH port on all of your systems, for systems that didn’t specify an alternative value in inventory.
+
+Template: ansible/ssh_timeout
+Type: string
+Default: 10
+Description: Default SSH timeout to use on connection attempts.
+
+Template: ansible/gathering
+Type: select
+Choices: smart, implicit, explicit
+Default: implicit
+Description: Default policy of facts gathering (variables discovered about remote systems).
+
+Template: ansible/callback
+Type: select
+Choices: context_demo, hipchat, logentries, log_plays, mail, minimal, oneline, profile_tasks, skippy, syslog_json, timer, tree
+Default: skippy
+Description: Default stdout callback.
+
+Template: ansible/force_overwrite
+Type: boolean
+Default: false
+Description: Force overwrite of global configuration file (/etc/ansible/ansible.cfg).
